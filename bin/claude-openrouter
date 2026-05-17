@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0"
+BASE_URL="${CLAUDE_OPENROUTER_BASE_URL:-https://openrouter.ai/api}"
+DEFAULT_PROFILE="${CLAUDE_OPENROUTER_DEFAULT_PROFILE:-claude}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  claude-openrouter [profile|model-id] [--dry-run|--print-env] [claude args...]
+
+Profiles:
+  claude       Strict Claude compatibility. Uses Anthropic first-party models through OpenRouter.
+  free         Lowest-cost/free routing via openrouter/free. Best-effort Claude Code compatibility.
+  nemotron     nvidia/nemotron-3-super-120b-a12b:free. Best-effort compatibility.
+  ring         inclusionai/ring-2.6-1t. Best-effort compatibility.
+  owl          openrouter/owl-alpha. Best-effort compatibility.
+  pareto-code  openrouter/pareto-code. Best-effort compatibility.
+  hunyuan      tencent/hy3-preview. Best-effort compatibility.
+
+Examples:
+  claude-openrouter claude
+  claude-openrouter free
+  claude-openrouter nemotron -p "Reply with exactly OK"
+  claude-openrouter openrouter/pareto-code
+  claude-openrouter --print-env claude
+
+Environment:
+  OPENROUTER_API_KEY                 Required OpenRouter API key.
+  CLAUDE_OPENROUTER_BASE_URL          Default: https://openrouter.ai/api
+  CLAUDE_OPENROUTER_DEFAULT_PROFILE   Default: claude
+  CLAUDE_OPENROUTER_MAIN_MODEL        Main Claude Code model override.
+  API_TIMEOUT_MS                      Default: 3000000
+
+Notes:
+  OpenRouter's Claude Code docs require ANTHROPIC_API_KEY to be explicitly blank.
+  The claude profile is the safest profile for Claude Code's tool-use and context features.
+EOF
+}
+
+die() {
+  printf 'Error: %s\n' "$*" >&2
+  exit 1
+}
+
+need_command() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+resolve_model() {
+  case "$1" in
+    claude|compatible|strict)
+      printf '%s\n' "claude"
+      ;;
+    free|auto-free|openrouter-free)
+      printf '%s\n' "openrouter/free"
+      ;;
+    nemotron|nvidia-nemotron)
+      printf '%s\n' "nvidia/nemotron-3-super-120b-a12b:free"
+      ;;
+    ring|ring26|ring-2.6|ring-free)
+      printf '%s\n' "inclusionai/ring-2.6-1t"
+      ;;
+    owl|owl-alpha)
+      printf '%s\n' "openrouter/owl-alpha"
+      ;;
+    pareto|pareto-code|code)
+      printf '%s\n' "openrouter/pareto-code"
+      ;;
+    hunyuan|hy3|tencent)
+      printf '%s\n' "tencent/hy3-preview"
+      ;;
+    *)
+      printf '%s\n' "$1"
+      ;;
+  esac
+}
+
+print_env() {
+  for item in "$@"; do
+    printf '%q\n' "$item"
+  done
+}
+
+dry_run=0
+print_only=0
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -v|--version|version)
+    printf 'claude-openrouter %s\n' "$VERSION"
+    exit 0
+    ;;
+  --dry-run)
+    dry_run=1
+    shift
+    ;;
+  --print-env)
+    print_only=1
+    shift
+    ;;
+esac
+
+profile="$DEFAULT_PROFILE"
+if [[ -n "${1:-}" && "$1" != -* ]]; then
+  profile="$1"
+  shift
+fi
+
+need_command claude
+
+api_key="${OPENROUTER_API_KEY:-}"
+[[ -n "$api_key" ]] || die "OPENROUTER_API_KEY is not set"
+
+resolved_model="$(resolve_model "$profile")"
+model_opus="anthropic/claude-opus-4.7"
+model_sonnet="anthropic/claude-sonnet-4.6"
+model_haiku="anthropic/claude-haiku-4.5"
+subagent_model="$model_haiku"
+main_model="${CLAUDE_OPENROUTER_MAIN_MODEL:-sonnet}"
+
+if [[ "$resolved_model" != "claude" ]]; then
+  model_opus="$resolved_model"
+  model_sonnet="$resolved_model"
+  model_haiku="$resolved_model"
+  subagent_model="$resolved_model"
+  main_model="$resolved_model"
+fi
+
+env_args=(
+  -u ANTHROPIC_BASE_URL
+  -u ANTHROPIC_AUTH_TOKEN
+  -u ANTHROPIC_API_KEY
+  -u ANTHROPIC_DEFAULT_OPUS_MODEL
+  -u ANTHROPIC_DEFAULT_SONNET_MODEL
+  -u ANTHROPIC_DEFAULT_HAIKU_MODEL
+  -u ANTHROPIC_SMALL_FAST_MODEL
+  -u CLAUDE_CODE_SUBAGENT_MODEL
+  -u CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK
+  "ANTHROPIC_BASE_URL=$BASE_URL"
+  "ANTHROPIC_AUTH_TOKEN=$api_key"
+  "ANTHROPIC_API_KEY="
+  "ANTHROPIC_MODEL=$main_model"
+  "ANTHROPIC_DEFAULT_OPUS_MODEL=$model_opus"
+  "ANTHROPIC_DEFAULT_SONNET_MODEL=$model_sonnet"
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL=$model_haiku"
+  "ANTHROPIC_SMALL_FAST_MODEL=$model_haiku"
+  "CLAUDE_CODE_SUBAGENT_MODEL=$subagent_model"
+  "CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK=1"
+  "API_TIMEOUT_MS=${API_TIMEOUT_MS:-3000000}"
+)
+
+if [[ "$print_only" == "1" || "$dry_run" == "1" ]]; then
+  printf 'Profile: %s\n' "$profile"
+  printf 'Resolved model: %s\n' "$resolved_model"
+  printf 'Command: claude %s\n' "$*"
+  printf '\nEnvironment:\n'
+  for env_item in "${env_args[@]}"; do
+    [[ "$env_item" == OPENROUTER_API_KEY=* || "$env_item" == ANTHROPIC_AUTH_TOKEN=* ]] && continue
+    [[ "$env_item" == -* ]] && continue
+    [[ "$env_item" == *"="* ]] || continue
+    printf '  %s\n' "$env_item"
+  done
+  printf '  ANTHROPIC_AUTH_TOKEN=<redacted>\n'
+  [[ "$dry_run" == "1" ]] && exit 0
+  [[ "$print_only" == "1" ]] && exit 0
+fi
+
+exec env "${env_args[@]}" claude "$@"
