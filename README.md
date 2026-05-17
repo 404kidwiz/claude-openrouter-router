@@ -114,9 +114,9 @@ claude-openrouter --set-main-model sonnet
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config
-claude-openrouter --install-profile-commands
-claude-openrouter --list-profile-commands
-claude-openrouter --commands-dir
+claude-openrouter install-commands
+claude-openrouter list-commands
+claude-openrouter commands-dir
 claude-openrouter --config-path
 ```
 
@@ -136,10 +136,10 @@ It walks through:
 - Confirming the OpenRouter base URL.
 - Setting the API timeout.
 - Optionally adding custom OpenRouter model profiles.
-- Installing generated profile commands such as `claude-ring` and `claude-qwen`.
+- Creating shortcut commands such as `claude-ring` and `claude-qwen`.
 - Running a dry-run verification.
 
-Important: bare `claude` still launches the original Claude Code binary. Use `claude-openrouter`, `claude-ring`, `claude-qwen`, or another generated profile command to route through OpenRouter.
+Important: bare `claude` still launches the original Claude Code binary. Use `claude-openrouter`, `claude-ring`, `claude-qwen`, or another shortcut command to route through OpenRouter.
 
 Strict Claude compatibility:
 
@@ -183,7 +183,7 @@ User-defined model profiles:
 claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
 claude-openrouter --add-profile qwen qwen/qwen3-coder:free
 claude-openrouter --list-profiles
-claude-openrouter --install-profile-commands
+claude-openrouter install-commands
 claude-openrouter kimi
 claude-qwen
 ```
@@ -263,13 +263,21 @@ To store profiles somewhere else:
 export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/my-openrouter-profiles"
 ```
 
-## Generated Commands
+## Shortcut Commands
 
-The router can create real terminal commands for every built-in and custom profile:
+Shortcut commands are the friendly commands you run every day.
+
+`claude-openrouter install-commands` creates one small launcher per model profile, so you can type `claude-ring` instead of remembering `claude-openrouter ring`.
 
 ```bash
-claude-openrouter --install-profile-commands
+claude-openrouter install-commands
 ```
+
+What it means:
+
+- `claude-openrouter` is the router.
+- `install-commands` means “create the shortcut commands.”
+- It writes commands like `claude-ring` and `claude-qwen` into `~/.local/bin`.
 
 Examples:
 
@@ -284,7 +292,7 @@ claude-qwen
 List what would be available:
 
 ```bash
-claude-openrouter --list-profile-commands
+claude-openrouter list-commands
 ```
 
 By default commands are written to:
@@ -299,7 +307,7 @@ Change that with:
 export CLAUDE_OPENROUTER_COMMANDS_DIR="$HOME/bin"
 ```
 
-The generated commands intentionally do not replace `claude`. That keeps the original Claude Code command untouched and avoids confusing recursion. If you want OpenRouter routing, call `claude-openrouter` or a generated command such as `claude-ring`.
+The shortcut commands intentionally do not replace `claude`. That keeps the original Claude Code command untouched and avoids confusing recursion. If you want OpenRouter routing, call `claude-openrouter` or a shortcut command such as `claude-ring`.
 
 ## Dry Run
 
@@ -382,9 +390,9 @@ claude-openrouter --set-main-model sonnet           # Main Claude Code model for
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config                     # Redacts secrets
-claude-openrouter --install-profile-commands        # Create claude-ring, claude-qwen, etc.
-claude-openrouter --list-profile-commands           # Preview generated command names
-claude-openrouter --commands-dir                    # Prints command install directory
+claude-openrouter install-commands        # Create shortcuts like claude-ring and claude-qwen
+claude-openrouter list-commands           # Preview shortcut command names
+claude-openrouter commands-dir            # Print shortcut command install directory
 claude-openrouter --config-path                     # Prints config file path
 ```
 

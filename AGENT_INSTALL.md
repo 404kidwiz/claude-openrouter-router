@@ -32,8 +32,10 @@ After installation, verify:
 command -v claude-openrouter
 claude-openrouter --version
 claude-openrouter --show-config
-claude-openrouter --install-profile-commands
+claude-openrouter install-commands
 ```
+
+`install-commands` creates friendly shortcut commands, for example `claude-ring`, `claude-owl`, and custom commands like `claude-qwen`.
 
 Then tell the user to run:
 
@@ -87,11 +89,11 @@ Example:
 
 ```bash
 claude-openrouter --add-profile qwen qwen/qwen3-coder:free
-claude-openrouter --install-profile-commands
+claude-openrouter install-commands
 claude-qwen
 ```
 
-Generated profile commands intentionally do not replace the user's normal `claude` command. Use `claude-openrouter`, `claude-ring`, `claude-qwen`, or another generated `claude-<profile>` command when OpenRouter routing is desired.
+Shortcut commands intentionally do not replace the user's normal `claude` command. Use `claude-openrouter`, `claude-ring`, `claude-qwen`, or another shortcut command when OpenRouter routing is desired.
 
 Run a safe dry-run:
 
@@ -106,5 +108,5 @@ The install is complete when:
 - `command -v claude-openrouter` resolves.
 - `claude-openrouter --version` prints a version.
 - `claude-openrouter --show-config` runs without exposing the full API key.
-- `claude-openrouter --install-profile-commands` creates profile commands in `~/.local/bin` or `$CLAUDE_OPENROUTER_COMMANDS_DIR`.
+- `claude-openrouter install-commands` creates shortcut commands in `~/.local/bin` or `$CLAUDE_OPENROUTER_COMMANDS_DIR`.
 - The user knows to run `claude-openrouter --setup` if they have not configured a key yet.

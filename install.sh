@@ -27,6 +27,6 @@ esac
 
 printf '\nNext steps:\n'
 printf '  claude-openrouter --setup\n'
-printf '  claude-openrouter --install-profile-commands\n'
+printf '  claude-openrouter install-commands\n'
 printf '  # or: export OPENROUTER_API_KEY="<your-openrouter-api-key>"\n'
 printf '  claude-openrouter claude\n'

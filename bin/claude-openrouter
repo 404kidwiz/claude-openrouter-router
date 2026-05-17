@@ -20,8 +20,9 @@ Usage:
   claude-openrouter --set-base-url <url>
   claude-openrouter --set-timeout <milliseconds>
   claude-openrouter --show-config
-  claude-openrouter --install-profile-commands
-  claude-openrouter --commands-dir
+  claude-openrouter install-commands
+  claude-openrouter list-commands
+  claude-openrouter commands-dir
   claude-openrouter --add-profile <name> <openrouter-model-id>
   claude-openrouter --remove-profile <name>
   claude-openrouter --list-profiles
@@ -40,7 +41,7 @@ Examples:
   claude-openrouter --set-key sk-or-v1-...
   printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
   claude-openrouter --set-default-profile free
-  claude-openrouter --install-profile-commands
+  claude-openrouter install-commands
   claude-ring -p "Reply with exactly OK"
   claude-openrouter --show-config
   claude-openrouter claude
@@ -382,7 +383,7 @@ EOF
     add_custom="$(prompt_with_default "Add another custom profile? (y/N)" "N")"
   done
 
-  install_commands="$(prompt_with_default "Install profile commands like claude-ring and claude-qwen? (Y/n)" "Y")"
+  install_commands="$(prompt_with_default "Create shortcut commands now? This adds commands like claude-ring and claude-qwen. (Y/n)" "Y")"
   if yes_answer "$install_commands"; then
     install_profile_commands
   fi
@@ -606,11 +607,11 @@ case "${1:-}" in
     show_config
     exit 0
     ;;
-  --install-profile-commands|install-commands)
+  --install-profile-commands|--install-commands|install-commands|install-shortcuts)
     install_profile_commands
     exit 0
     ;;
-  --list-profile-commands|list-commands)
+  --list-profile-commands|--list-commands|list-commands|list-shortcuts)
     list_profile_commands
     exit 0
     ;;
@@ -618,7 +619,7 @@ case "${1:-}" in
     printf '%s\n' "$CONFIG_FILE"
     exit 0
     ;;
-  --commands-dir)
+  --commands-dir|commands-dir)
     printf '%s\n' "$COMMANDS_DIR"
     exit 0
     ;;
