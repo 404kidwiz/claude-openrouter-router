@@ -13,6 +13,9 @@ for script in "$repo_dir"/bin/*; do
   printf 'Installed %s\n' "$bindir/$name"
 done
 
+install -m 0755 "$repo_dir/bootstrap.sh" "$bindir/claude-openrouter-bootstrap"
+printf 'Installed %s\n' "$bindir/claude-openrouter-bootstrap"
+
 case ":$PATH:" in
   *":$bindir:"*) ;;
   *)

@@ -18,6 +18,18 @@ The empty `ANTHROPIC_API_KEY` is intentional. OpenRouter's Claude Code guide say
 
 ## Install
 
+One-line install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/404kidwiz/claude-openrouter-router/main/bootstrap.sh | bash
+```
+
+Then run:
+
+```bash
+claude-openrouter --setup
+```
+
 Clone and install:
 
 ```bash
@@ -75,6 +87,16 @@ Restart your shell, or run:
 ```bash
 source ~/.zshrc
 ```
+
+## AI Agent Install
+
+If you want another AI coding agent or LLM to install this for you, give it this link:
+
+```text
+https://raw.githubusercontent.com/404kidwiz/claude-openrouter-router/main/AGENT_INSTALL.md
+```
+
+That page tells the agent exactly what to run, how to verify the install, and how to handle the OpenRouter API key safely.
 
 ## Commands
 
@@ -335,6 +357,17 @@ claude-ring
 claude-owl
 claude-pareto-code
 ```
+
+## Suggested Improvements
+
+Good next enhancements:
+
+- Add `claude-openrouter doctor` to check `claude`, `PATH`, config permissions, OpenRouter connectivity, and selected model availability.
+- Add `claude-openrouter update` to rerun `bootstrap.sh` from the installed checkout.
+- Add shell completions for profiles and config commands.
+- Add model metadata caching from OpenRouter so users can search models from the terminal.
+- Add signed release archives or Homebrew packaging once the CLI stabilizes.
+- Add CI with shellcheck, install smoke tests, and scripted setup tests.
 
 ## Troubleshooting
 
