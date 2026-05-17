@@ -34,6 +34,12 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Create an OpenRouter API key from the [OpenRouter API keys page](https://openrouter.ai/settings/keys), then save it locally.
 
+Fastest setup:
+
+```bash
+claude-openrouter --setup
+```
+
 Recommended, avoids putting the key directly in shell history:
 
 ```bash
@@ -75,6 +81,7 @@ source ~/.zshrc
 Configuration:
 
 ```bash
+claude-openrouter --setup
 claude-openrouter --set-key "sk-or-v1-..."
 printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
 claude-openrouter --unset-key
@@ -85,6 +92,24 @@ claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config
 claude-openrouter --config-path
 ```
+
+## Setup Wizard
+
+Run the guided setup flow:
+
+```bash
+claude-openrouter --setup
+```
+
+It walks through:
+
+- Saving an OpenRouter API key.
+- Choosing a default profile such as `claude` or `free`.
+- Choosing the strict Claude-mode main model, usually `sonnet`.
+- Confirming the OpenRouter base URL.
+- Setting the API timeout.
+- Optionally adding custom OpenRouter model profiles.
+- Running a dry-run verification.
 
 Strict Claude compatibility:
 
@@ -227,6 +252,12 @@ Secrets are redacted from dry-run output.
 Easy path:
 
 ```bash
+claude-openrouter --setup
+```
+
+Manual path:
+
+```bash
 claude-openrouter --set-key "sk-or-v1-..."
 printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
 claude-openrouter --set-default-profile claude
@@ -270,6 +301,7 @@ Environment variables override saved config. Saved config overrides built-in def
 Configuration command reference:
 
 ```bash
+claude-openrouter --setup                             # Guided first-run setup
 claude-openrouter --set-key "sk-or-v1-..."          # Save OpenRouter API key
 claude-openrouter --set-key-stdin                   # Read OpenRouter API key from stdin
 claude-openrouter --unset-key                       # Remove saved API key

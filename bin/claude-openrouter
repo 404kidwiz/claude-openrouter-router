@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
 CONFIG_FILE="$CONFIG_DIR/config"
 PROFILES_FILE="$CONFIG_DIR/profiles"
@@ -10,6 +10,7 @@ usage() {
   cat <<'EOF'
 Usage:
   claude-openrouter [profile|model-id] [--dry-run|--print-env] [claude args...]
+  claude-openrouter --setup
   claude-openrouter --set-key <openrouter-api-key>
   claude-openrouter --set-key-stdin
   claude-openrouter --unset-key
@@ -32,6 +33,7 @@ Profiles:
   hunyuan      tencent/hy3-preview. Best-effort compatibility.
 
 Examples:
+  claude-openrouter --setup
   claude-openrouter --set-key sk-or-v1-...
   printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
   claude-openrouter --set-default-profile free
@@ -158,12 +160,18 @@ redact_secret() {
 
 show_config() {
   local saved_key saved_base_url saved_default_profile saved_main_model saved_timeout
+  local effective_key effective_base_url effective_default_profile effective_main_model effective_timeout
 
   saved_key="$(config_value OPENROUTER_API_KEY || true)"
   saved_base_url="$(config_value CLAUDE_OPENROUTER_BASE_URL || true)"
   saved_default_profile="$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || true)"
   saved_main_model="$(config_value CLAUDE_OPENROUTER_MAIN_MODEL || true)"
   saved_timeout="$(config_value API_TIMEOUT_MS || true)"
+  effective_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
+  effective_base_url="$(config_or_default "${CLAUDE_OPENROUTER_BASE_URL:-}" CLAUDE_OPENROUTER_BASE_URL "https://openrouter.ai/api")"
+  effective_default_profile="$(config_or_default "${CLAUDE_OPENROUTER_DEFAULT_PROFILE:-}" CLAUDE_OPENROUTER_DEFAULT_PROFILE "claude")"
+  effective_main_model="$(config_or_default "${CLAUDE_OPENROUTER_MAIN_MODEL:-}" CLAUDE_OPENROUTER_MAIN_MODEL "sonnet")"
+  effective_timeout="$(config_or_default "${API_TIMEOUT_MS:-}" API_TIMEOUT_MS "3000000")"
 
   printf 'Config file: %s\n' "$CONFIG_FILE"
   printf 'Profiles file: %s\n' "$PROFILES_FILE"
@@ -174,11 +182,136 @@ show_config() {
   printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "${saved_main_model:-<default: sonnet>}"
   printf '  API_TIMEOUT_MS=%s\n' "${saved_timeout:-<default: 3000000>}"
   printf '\nEffective config:\n'
-  printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "${OPENROUTER_API_KEY:-$saved_key}")"
-  printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "$BASE_URL"
-  printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "$DEFAULT_PROFILE"
-  printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "$MAIN_MODEL_DEFAULT"
-  printf '  API_TIMEOUT_MS=%s\n' "$TIMEOUT_MS"
+  printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "$effective_key")"
+  printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "$effective_base_url"
+  printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "$effective_default_profile"
+  printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "$effective_main_model"
+  printf '  API_TIMEOUT_MS=%s\n' "$effective_timeout"
+}
+
+prompt_with_default() {
+  local prompt="$1"
+  local default="$2"
+  local answer
+
+  if [[ -n "$default" ]]; then
+    printf '%s [%s]: ' "$prompt" "$default" >&2
+  else
+    printf '%s: ' "$prompt" >&2
+  fi
+
+  IFS= read -r answer || true
+  if [[ -n "$answer" ]]; then
+    printf '%s\n' "$answer"
+  else
+    printf '%s\n' "$default"
+  fi
+}
+
+prompt_secret() {
+  local prompt="$1"
+  local answer
+
+  printf '%s: ' "$prompt" >&2
+  if [[ -t 0 ]]; then
+    stty -echo
+    IFS= read -r answer || true
+    stty echo
+    printf '\n' >&2
+  else
+    IFS= read -r answer || true
+  fi
+  printf '%s\n' "$answer"
+}
+
+yes_answer() {
+  case "$1" in
+    y|Y|yes|YES|Yes)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+run_setup() {
+  local existing_key api_key default_profile main_model base_url timeout add_custom custom_name custom_model verify_choice
+
+  existing_key="$(config_value OPENROUTER_API_KEY || true)"
+
+  cat >&2 <<EOF
+Claude OpenRouter Router setup
+
+This will write config to:
+  $CONFIG_FILE
+
+Get an OpenRouter API key here:
+  https://openrouter.ai/settings/keys
+
+Press Enter to keep any shown defaults.
+
+EOF
+
+  if [[ -n "$existing_key" ]]; then
+    printf 'Existing API key: %s\n' "$(redact_secret "$existing_key")" >&2
+    api_key="$(prompt_secret "New OpenRouter API key (leave blank to keep existing)")"
+  else
+    api_key="$(prompt_secret "OpenRouter API key")"
+  fi
+
+  if [[ -n "$api_key" ]]; then
+    set_config_value OPENROUTER_API_KEY "$api_key"
+    printf 'Saved API key.\n' >&2
+  elif [[ -z "$existing_key" ]]; then
+    printf 'Skipped API key. You can add it later with:\n' >&2
+    printf "  printf '%%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin\n" >&2
+  else
+    printf 'Kept existing API key.\n' >&2
+  fi
+
+  default_profile="$(prompt_with_default "Default profile (claude/free/nemotron/ring/owl/pareto-code/hunyuan/custom)" "$DEFAULT_PROFILE")"
+  if [[ -n "$default_profile" ]]; then
+    set_config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE "$default_profile"
+  fi
+
+  main_model="$(prompt_with_default "Main Claude Code model for strict Claude profile" "$MAIN_MODEL_DEFAULT")"
+  if [[ -n "$main_model" ]]; then
+    set_config_value CLAUDE_OPENROUTER_MAIN_MODEL "$main_model"
+  fi
+
+  base_url="$(prompt_with_default "OpenRouter Anthropic-compatible base URL" "$BASE_URL")"
+  if [[ -n "$base_url" ]]; then
+    set_config_value CLAUDE_OPENROUTER_BASE_URL "$base_url"
+  fi
+
+  timeout="$(prompt_with_default "API timeout in milliseconds" "$TIMEOUT_MS")"
+  if [[ "$timeout" =~ ^[0-9]+$ ]]; then
+    set_config_value API_TIMEOUT_MS "$timeout"
+  else
+    printf 'Skipped invalid timeout: %s\n' "$timeout" >&2
+  fi
+
+  add_custom="$(prompt_with_default "Add a custom model profile now? (y/N)" "N")"
+  while yes_answer "$add_custom"; do
+    custom_name="$(prompt_with_default "Custom profile name" "")"
+    custom_model="$(prompt_with_default "OpenRouter model ID (provider/model)" "")"
+    if [[ -n "$custom_name" && -n "$custom_model" ]]; then
+      add_profile "$custom_name" "$custom_model"
+    else
+      printf 'Skipped empty custom profile.\n' >&2
+    fi
+    add_custom="$(prompt_with_default "Add another custom profile? (y/N)" "N")"
+  done
+
+  printf '\nSetup complete.\n\n' >&2
+  show_config
+
+  verify_choice="$(prompt_with_default "Run a dry-run verification now? (Y/n)" "Y")"
+  if yes_answer "$verify_choice"; then
+    printf '\nDry run:\n' >&2
+    "$0" --dry-run "$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || printf '%s\n' "$DEFAULT_PROFILE")"
+  fi
 }
 
 is_valid_profile_name() {
@@ -334,6 +467,10 @@ print_only=0
 case "${1:-}" in
   -h|--help|help)
     usage
+    exit 0
+    ;;
+  --setup|setup)
+    run_setup
     exit 0
     ;;
   --set-key)

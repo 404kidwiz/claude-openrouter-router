@@ -23,5 +23,6 @@ case ":$PATH:" in
 esac
 
 printf '\nNext steps:\n'
-printf '  export OPENROUTER_API_KEY="<your-openrouter-api-key>"\n'
+printf '  claude-openrouter --setup\n'
+printf '  # or: export OPENROUTER_API_KEY="<your-openrouter-api-key>"\n'
 printf '  claude-openrouter claude\n'
