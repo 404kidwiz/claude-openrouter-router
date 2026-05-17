@@ -1,11 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.5.3"
+VERSION="0.6.0"
 CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
 CONFIG_FILE="$CONFIG_DIR/config"
 PROFILES_FILE="$CONFIG_DIR/profiles"
 COMMANDS_DIR="${CLAUDE_OPENROUTER_COMMANDS_DIR:-$HOME/.local/bin}"
+
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
+  BOLD="$(printf '\033[1m')"
+  DIM="$(printf '\033[2m')"
+  RESET="$(printf '\033[0m')"
+  CYAN="$(printf '\033[36m')"
+  GREEN="$(printf '\033[32m')"
+  YELLOW="$(printf '\033[33m')"
+  BLUE="$(printf '\033[34m')"
+  MAGENTA="$(printf '\033[35m')"
+else
+  BOLD=""
+  DIM=""
+  RESET=""
+  CYAN=""
+  GREEN=""
+  YELLOW=""
+  BLUE=""
+  MAGENTA=""
+fi
+
+ui_hr() {
+  printf '%s\n' "${DIM}+------------------------------------------------------------+${RESET}"
+}
+
+ui_title() {
+  local title="$1"
+  ui_hr
+  printf '%s|%s %s%-58s%s %s|%s\n' "$DIM" "$RESET" "$BOLD$CYAN" "$title" "$RESET" "$DIM" "$RESET"
+  ui_hr
+}
+
+ui_step() {
+  printf '\n%s==>%s %s%s%s\n' "$BLUE" "$RESET" "$BOLD" "$1" "$RESET"
+}
+
+ui_success() {
+  printf '%sOK%s %s\n' "$GREEN" "$RESET" "$1"
+}
+
+ui_warn() {
+  printf '%sNote:%s %s\n' "$YELLOW" "$RESET" "$1"
+}
+
+ui_command() {
+  printf '  %s%s%s\n' "$BOLD" "$1" "$RESET"
+}
 
 usage() {
   cat <<'EOF'
@@ -183,16 +230,17 @@ show_config() {
   effective_main_model="$(config_or_default "${CLAUDE_OPENROUTER_MAIN_MODEL:-}" CLAUDE_OPENROUTER_MAIN_MODEL "sonnet")"
   effective_timeout="$(config_or_default "${API_TIMEOUT_MS:-}" API_TIMEOUT_MS "3000000")"
 
+  ui_title "Claude OpenRouter Config"
   printf 'Config file: %s\n' "$CONFIG_FILE"
   printf 'Profiles file: %s\n' "$PROFILES_FILE"
   printf 'Commands dir: %s\n' "$COMMANDS_DIR"
-  printf '\nSaved config:\n'
+  ui_step "Saved config"
   printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "$saved_key")"
   printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "${saved_base_url:-<default: https://openrouter.ai/api>}"
   printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "${saved_default_profile:-<default: claude>}"
   printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "${saved_main_model:-<default: sonnet>}"
   printf '  API_TIMEOUT_MS=%s\n' "${saved_timeout:-<default: 3000000>}"
-  printf '\nEffective config:\n'
+  ui_step "Effective config"
   printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "$effective_key")"
   printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "$effective_base_url"
   printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "$effective_default_profile"
@@ -305,7 +353,7 @@ set -euo pipefail
 exec claude-openrouter "$profile" "\$@"
 EOF
   chmod 0755 "$COMMANDS_DIR/$command_name"
-  printf 'Installed %s -> claude-openrouter %s\n' "$COMMANDS_DIR/$command_name" "$profile"
+  ui_success "Installed $COMMANDS_DIR/$command_name -> claude-openrouter $profile"
 }
 
 print_command_help() {
@@ -314,27 +362,27 @@ print_command_help() {
 
   command_name="$(profile_command_name "$profile")"
 
-  printf '\nReady to run:\n'
+  ui_title "Ready To Run"
   if command -v "$command_name" >/dev/null 2>&1 || [[ -x "$COMMANDS_DIR/$command_name" ]]; then
-    printf '  %s\n' "$command_name"
-    printf '  %s -p "Reply with exactly OK"\n' "$command_name"
+    ui_command "$command_name"
+    ui_command "$command_name -p \"Reply with exactly OK\""
   else
-    printf '  claude-openrouter %s\n' "$profile"
-    printf '  claude-openrouter %s -p "Reply with exactly OK"\n' "$profile"
-    printf '\nTo create the shorter %s command:\n' "$command_name"
-    printf '  claude-openrouter install-commands\n'
+    ui_command "claude-openrouter $profile"
+    ui_command "claude-openrouter $profile -p \"Reply with exactly OK\""
+    ui_step "Create the shorter $command_name command"
+    ui_command "claude-openrouter install-commands"
   fi
-  printf '\nEquivalent direct router command:\n'
-  printf '  claude-openrouter %s\n' "$profile"
-  printf '\nUseful checks:\n'
-  printf '  claude-openrouter --dry-run %s\n' "$profile"
-  printf '  claude-openrouter list-commands\n'
+  ui_step "Equivalent direct router command"
+  ui_command "claude-openrouter $profile"
+  ui_step "Useful checks"
+  ui_command "claude-openrouter --dry-run $profile"
+  ui_command "claude-openrouter list-commands"
 
   case ":$PATH:" in
     *":$COMMANDS_DIR:"*) ;;
     *)
-      printf '\nIf %s is not found, add the commands directory to PATH:\n' "$command_name"
-      printf '  export PATH="%s:$PATH"\n' "$COMMANDS_DIR"
+      ui_warn "If $command_name is not found, add the commands directory to PATH:"
+      ui_command "export PATH=\"$COMMANDS_DIR:\$PATH\""
       ;;
   esac
 }
@@ -349,18 +397,18 @@ install_profile_commands() {
   case ":$PATH:" in
     *":$COMMANDS_DIR:"*) ;;
     *)
-      printf '\nNote: %s is not currently in PATH.\n' "$COMMANDS_DIR" >&2
+      ui_warn "$COMMANDS_DIR is not currently in PATH."
       printf 'Add this to your shell profile:\n' >&2
       printf '  export PATH="%s:$PATH"\n' "$COMMANDS_DIR" >&2
       ;;
   esac
 
-  printf '\nShortcut commands are ready. Try one of these:\n'
-  printf '  claude-ring\n'
-  printf '  claude-owl\n'
-  printf '  claude-nemotron\n'
-  printf '\nList every available shortcut:\n'
-  printf '  claude-openrouter list-commands\n'
+  ui_title "Shortcut Commands Ready"
+  ui_command "claude-ring"
+  ui_command "claude-owl"
+  ui_command "claude-nemotron"
+  ui_step "List every available shortcut"
+  ui_command "claude-openrouter list-commands"
 }
 
 list_profile_commands() {
@@ -377,18 +425,17 @@ run_setup() {
 
   existing_key="$(config_value OPENROUTER_API_KEY || true)"
 
-  cat >&2 <<EOF
-Claude OpenRouter Router setup
-
-This will write config to:
-  $CONFIG_FILE
-
-Get an OpenRouter API key here:
-  https://openrouter.ai/settings/keys
-
-Press Enter to keep any shown defaults.
-
-EOF
+  ui_title "Claude OpenRouter Router"
+  printf '%s\n' "      .----------------------------."
+  printf '%s\n' "     /  OpenRouter -> Claude Code  /|"
+  printf '%s\n' "    /----------------------------/ |"
+  printf '%s\n' "    |  profiles  shortcuts  API  | /"
+  printf '%s\n' "    '----------------------------'"
+  ui_step "Setup target"
+  printf 'Config file: %s\n' "$CONFIG_FILE"
+  ui_step "Get an OpenRouter API key"
+  printf 'https://openrouter.ai/settings/keys\n'
+  printf '\n%sPress Enter to keep any shown defaults.%s\n\n' "$DIM" "$RESET"
 
   if [[ -n "$existing_key" ]]; then
     printf 'Existing API key: %s\n' "$(redact_secret "$existing_key")" >&2
@@ -399,12 +446,12 @@ EOF
 
   if [[ -n "$api_key" ]]; then
     set_config_value OPENROUTER_API_KEY "$api_key"
-    printf 'Saved API key.\n' >&2
+    ui_success "Saved API key."
   elif [[ -z "$existing_key" ]]; then
-    printf 'Skipped API key. You can add it later with:\n' >&2
+    ui_warn "Skipped API key. You can add it later with:"
     printf "  printf '%%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin\n" >&2
   else
-    printf 'Kept existing API key.\n' >&2
+    ui_success "Kept existing API key."
   fi
 
   default_profile="$(prompt_with_default "Default profile (claude/free/nemotron/ring/owl/pareto-code/hunyuan/custom)" "$DEFAULT_PROFILE")"
@@ -449,12 +496,12 @@ EOF
     install_profile_commands
   fi
 
-  printf '\nSetup complete.\n\n' >&2
+  ui_title "Setup Complete"
   show_config
 
   verify_choice="$(prompt_with_default "Run a dry-run verification now? (Y/n)" "Y")"
   if yes_answer "$verify_choice"; then
-    printf '\nDry run:\n' >&2
+    ui_step "Dry run"
     "$0" --dry-run "$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || printf '%s\n' "$DEFAULT_PROFILE")"
   fi
 

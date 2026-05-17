@@ -383,6 +383,12 @@ claude-openrouter --setup
 
 When setup finishes, it prints the command to run next, plus a safe dry-run command for checking the selected profile.
 
+The setup UI uses dependency-free terminal colors, ASCII cards, and command blocks. Disable color with:
+
+```bash
+NO_COLOR=1 claude-openrouter --setup
+```
+
 Manual path:
 
 ```bash
