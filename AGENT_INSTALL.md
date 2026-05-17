@@ -88,6 +88,16 @@ claude-openrouter --add-profile <name> <provider/model-id>
 Example:
 
 ```bash
+claude-openrouter --add-profile qwen/qwen3-coder:free
+claude-openrouter install-commands
+claude-qwen3-coder
+```
+
+If the user provides only a model ID, the router auto-generates the profile and command name from the model slug. For example, `qwen/qwen3-coder:free` becomes profile `qwen3-coder` and shortcut command `claude-qwen3-coder`.
+
+Users can still choose a shorter name explicitly:
+
+```bash
 claude-openrouter --add-profile qwen qwen/qwen3-coder:free
 claude-openrouter install-commands
 claude-qwen

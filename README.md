@@ -180,12 +180,13 @@ claude-or-model openrouter/owl-alpha
 User-defined model profiles:
 
 ```bash
-claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
-claude-openrouter --add-profile qwen qwen/qwen3-coder:free
+claude-openrouter --add-profile moonshotai/kimi-k2:free
+claude-openrouter --add-profile qwen/qwen3-coder:free
+claude-openrouter --add-profile my-qwen qwen/qwen3-coder:free
 claude-openrouter --list-profiles
 claude-openrouter install-commands
-claude-openrouter kimi
-claude-qwen
+claude-openrouter kimi-k2
+claude-qwen3-coder
 ```
 
 You can pass normal Claude Code arguments after the profile:
@@ -213,10 +214,32 @@ Claude Code is optimized for Anthropic models. The `claude` profile is the relia
 
 You can add your own OpenRouter model aliases without editing the script.
 
+If you provide only a model ID, the router auto-generates a profile name from the model slug:
+
+```bash
+claude-openrouter --add-profile qwen/qwen3-coder:free
+claude-openrouter install-commands
+claude-qwen3-coder
+```
+
+In that example:
+
+- Model ID: `qwen/qwen3-coder:free`
+- Auto-generated profile: `qwen3-coder`
+- Auto-generated shortcut command: `claude-qwen3-coder`
+
 Add a profile:
 
 ```bash
 claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
+```
+
+Or choose the profile name yourself:
+
+```bash
+claude-openrouter --add-profile qwen qwen/qwen3-coder:free
+claude-openrouter install-commands
+claude-qwen
 ```
 
 Use it:
@@ -268,6 +291,8 @@ export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/my-openrouter-profiles"
 Shortcut commands are the friendly commands you run every day.
 
 `claude-openrouter install-commands` creates one small launcher per model profile, so you can type `claude-ring` instead of remembering `claude-openrouter ring`.
+
+For custom models, the command name comes from the profile name. If the user added a model without choosing a name, the profile name is auto-generated from the model ID.
 
 ```bash
 claude-openrouter install-commands
