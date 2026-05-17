@@ -1,5 +1,7 @@
 # Claude OpenRouter Router
 
+![Claude OpenRouter Router hero](assets/claude-openrouter-router-hero.png)
+
 Small shell launchers for running Claude Code through OpenRouter's Anthropic-compatible endpoint.
 
 The goal is simple: keep Claude Code's environment clean, make provider switching obvious, and offer a safe default that follows OpenRouter's Claude Code documentation.
