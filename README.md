@@ -81,6 +81,15 @@ claude-or-model pareto-code
 claude-or-model openrouter/owl-alpha
 ```
 
+User-defined model profiles:
+
+```bash
+claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
+claude-openrouter --add-profile qwen qwen/qwen3-coder:free
+claude-openrouter --list-profiles
+claude-openrouter kimi
+```
+
 You can pass normal Claude Code arguments after the profile:
 
 ```bash
@@ -101,6 +110,60 @@ claude-or-model nemotron -p "Reply with exactly OK"
 | `hunyuan` | `tencent/hy3-preview` | Best-effort |
 
 Claude Code is optimized for Anthropic models. The `claude` profile is the reliable default. Non-Claude OpenRouter models can work through OpenRouter's Anthropic-compatible surface, but tool use, context features, speed, and formatting may vary by model/provider.
+
+## Custom Profiles
+
+You can add your own OpenRouter model aliases without editing the script.
+
+Add a profile:
+
+```bash
+claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
+```
+
+Use it:
+
+```bash
+claude-openrouter kimi
+claude-or-model kimi -p "Reply with exactly OK"
+```
+
+List profiles:
+
+```bash
+claude-openrouter --list-profiles
+```
+
+Remove a profile:
+
+```bash
+claude-openrouter --remove-profile kimi
+```
+
+Custom profiles are stored here by default:
+
+```bash
+~/.config/claude-openrouter-router/profiles
+```
+
+The file format is intentionally boring:
+
+```text
+profile-name=provider/model-id
+```
+
+Example:
+
+```text
+kimi=moonshotai/kimi-k2:free
+qwen=qwen/qwen3-coder:free
+```
+
+To store profiles somewhere else:
+
+```bash
+export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/my-openrouter-profiles"
+```
 
 ## Dry Run
 
@@ -133,6 +196,7 @@ Optional:
 export CLAUDE_OPENROUTER_DEFAULT_PROFILE=claude
 export CLAUDE_OPENROUTER_MAIN_MODEL=sonnet
 export CLAUDE_OPENROUTER_BASE_URL=https://openrouter.ai/api
+export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/claude-openrouter-router"
 export API_TIMEOUT_MS=3000000
 ```
 

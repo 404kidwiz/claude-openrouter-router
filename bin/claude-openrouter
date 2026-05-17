@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 BASE_URL="${CLAUDE_OPENROUTER_BASE_URL:-https://openrouter.ai/api}"
 DEFAULT_PROFILE="${CLAUDE_OPENROUTER_DEFAULT_PROFILE:-claude}"
+CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
+PROFILES_FILE="$CONFIG_DIR/profiles"
 
 usage() {
   cat <<'EOF'
 Usage:
   claude-openrouter [profile|model-id] [--dry-run|--print-env] [claude args...]
+  claude-openrouter --add-profile <name> <openrouter-model-id>
+  claude-openrouter --remove-profile <name>
+  claude-openrouter --list-profiles
 
 Profiles:
   claude       Strict Claude compatibility. Uses Anthropic first-party models through OpenRouter.
@@ -22,6 +27,8 @@ Profiles:
 Examples:
   claude-openrouter claude
   claude-openrouter free
+  claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
+  claude-openrouter kimi -p "Reply with exactly OK"
   claude-openrouter nemotron -p "Reply with exactly OK"
   claude-openrouter openrouter/pareto-code
   claude-openrouter --print-env claude
@@ -29,6 +36,7 @@ Examples:
 Environment:
   OPENROUTER_API_KEY                 Required OpenRouter API key.
   CLAUDE_OPENROUTER_BASE_URL          Default: https://openrouter.ai/api
+  CLAUDE_OPENROUTER_CONFIG_DIR        Default: ~/.config/claude-openrouter-router
   CLAUDE_OPENROUTER_DEFAULT_PROFILE   Default: claude
   CLAUDE_OPENROUTER_MAIN_MODEL        Main Claude Code model override.
   API_TIMEOUT_MS                      Default: 3000000
@@ -46,6 +54,109 @@ die() {
 
 need_command() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+is_valid_profile_name() {
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+}
+
+is_builtin_profile() {
+  case "$1" in
+    claude|compatible|strict|free|auto-free|openrouter-free|nemotron|nvidia-nemotron|ring|ring26|ring-2.6|ring-free|owl|owl-alpha|pareto|pareto-code|code|hunyuan|hy3|tencent)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ensure_config_dir() {
+  mkdir -p "$CONFIG_DIR"
+}
+
+lookup_custom_profile() {
+  local name="$1"
+  [[ -f "$PROFILES_FILE" ]] || return 1
+
+  awk -F= -v key="$name" '
+    /^[[:space:]]*($|#)/ { next }
+    $1 == key {
+      sub(/^[^=]*=/, "")
+      print
+      found = 1
+      exit
+    }
+    END { exit found ? 0 : 1 }
+  ' "$PROFILES_FILE"
+}
+
+add_profile() {
+  local name="${1:-}"
+  local model="${2:-}"
+
+  [[ -n "$name" && -n "$model" ]] || die "Usage: claude-openrouter --add-profile <name> <openrouter-model-id>"
+  is_valid_profile_name "$name" || die "Profile names may only contain letters, numbers, dots, underscores, and dashes."
+  is_builtin_profile "$name" && die "'$name' is a built-in profile name. Choose a different custom name."
+  [[ "$model" == */* ]] || die "Model IDs should look like provider/model, for example moonshotai/kimi-k2:free."
+
+  ensure_config_dir
+  touch "$PROFILES_FILE"
+
+  if awk -F= -v key="$name" '$1 == key { found = 1 } END { exit found ? 0 : 1 }' "$PROFILES_FILE"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -F= -v key="$name" -v value="$model" '
+      $1 == key { print key "=" value; next }
+      { print }
+    ' "$PROFILES_FILE" > "$tmp_file"
+    mv "$tmp_file" "$PROFILES_FILE"
+    printf 'Updated profile %s -> %s\n' "$name" "$model"
+  else
+    printf '%s=%s\n' "$name" "$model" >> "$PROFILES_FILE"
+    printf 'Added profile %s -> %s\n' "$name" "$model"
+  fi
+}
+
+remove_profile() {
+  local name="${1:-}"
+
+  [[ -n "$name" ]] || die "Usage: claude-openrouter --remove-profile <name>"
+  [[ -f "$PROFILES_FILE" ]] || die "No custom profiles file exists at $PROFILES_FILE"
+
+  if ! awk -F= -v key="$name" '$1 == key { found = 1 } END { exit found ? 0 : 1 }' "$PROFILES_FILE"; then
+    die "No custom profile named '$name' exists."
+  fi
+
+  local tmp_file
+  tmp_file="$(mktemp)"
+  awk -F= -v key="$name" '$1 != key { print }' "$PROFILES_FILE" > "$tmp_file"
+  mv "$tmp_file" "$PROFILES_FILE"
+  printf 'Removed profile %s\n' "$name"
+}
+
+list_profiles() {
+  cat <<'EOF'
+Built-in profiles:
+  claude       anthropic/claude-* models through OpenRouter
+  free         openrouter/free
+  nemotron     nvidia/nemotron-3-super-120b-a12b:free
+  ring         inclusionai/ring-2.6-1t
+  owl          openrouter/owl-alpha
+  pareto-code  openrouter/pareto-code
+  hunyuan      tencent/hy3-preview
+EOF
+
+  printf '\nCustom profiles (%s):\n' "$PROFILES_FILE"
+  if [[ ! -s "$PROFILES_FILE" ]]; then
+    printf '  none\n'
+    return 0
+  fi
+
+  awk -F= '
+    /^[[:space:]]*($|#)/ { next }
+    { printf "  %-12s %s\n", $1, substr($0, index($0, "=") + 1) }
+  ' "$PROFILES_FILE"
 }
 
 resolve_model() {
@@ -72,6 +183,10 @@ resolve_model() {
       printf '%s\n' "tencent/hy3-preview"
       ;;
     *)
+      if custom_model="$(lookup_custom_profile "$1")"; then
+        printf '%s\n' "$custom_model"
+        return 0
+      fi
       printf '%s\n' "$1"
       ;;
   esac
@@ -89,6 +204,20 @@ print_only=0
 case "${1:-}" in
   -h|--help|help)
     usage
+    exit 0
+    ;;
+  --add-profile)
+    shift
+    add_profile "${1:-}" "${2:-}"
+    exit 0
+    ;;
+  --remove-profile)
+    shift
+    remove_profile "${1:-}"
+    exit 0
+    ;;
+  --list-profiles|list|profiles)
+    list_profiles
     exit 0
     ;;
   -v|--version|version)
