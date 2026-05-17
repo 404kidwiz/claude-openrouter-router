@@ -114,6 +114,9 @@ claude-openrouter --set-main-model sonnet
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config
+claude-openrouter --install-profile-commands
+claude-openrouter --list-profile-commands
+claude-openrouter --commands-dir
 claude-openrouter --config-path
 ```
 
@@ -133,7 +136,10 @@ It walks through:
 - Confirming the OpenRouter base URL.
 - Setting the API timeout.
 - Optionally adding custom OpenRouter model profiles.
+- Installing generated profile commands such as `claude-ring` and `claude-qwen`.
 - Running a dry-run verification.
+
+Important: bare `claude` still launches the original Claude Code binary. Use `claude-openrouter`, `claude-ring`, `claude-qwen`, or another generated profile command to route through OpenRouter.
 
 Strict Claude compatibility:
 
@@ -152,6 +158,7 @@ claude-or-auto-free
 Named OpenRouter model profiles:
 
 ```bash
+claude-openrouter-claude
 claude-nemotron
 claude-ring
 claude-owl
@@ -176,7 +183,9 @@ User-defined model profiles:
 claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
 claude-openrouter --add-profile qwen qwen/qwen3-coder:free
 claude-openrouter --list-profiles
+claude-openrouter --install-profile-commands
 claude-openrouter kimi
+claude-qwen
 ```
 
 You can pass normal Claude Code arguments after the profile:
@@ -254,6 +263,44 @@ To store profiles somewhere else:
 export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/my-openrouter-profiles"
 ```
 
+## Generated Commands
+
+The router can create real terminal commands for every built-in and custom profile:
+
+```bash
+claude-openrouter --install-profile-commands
+```
+
+Examples:
+
+```bash
+claude-ring
+claude-owl
+claude-nemotron
+claude-pareto-code
+claude-qwen
+```
+
+List what would be available:
+
+```bash
+claude-openrouter --list-profile-commands
+```
+
+By default commands are written to:
+
+```bash
+~/.local/bin
+```
+
+Change that with:
+
+```bash
+export CLAUDE_OPENROUTER_COMMANDS_DIR="$HOME/bin"
+```
+
+The generated commands intentionally do not replace `claude`. That keeps the original Claude Code command untouched and avoids confusing recursion. If you want OpenRouter routing, call `claude-openrouter` or a generated command such as `claude-ring`.
+
 ## Dry Run
 
 Preview what will be launched without starting Claude Code:
@@ -314,6 +361,7 @@ Optional environment variables:
 
 ```bash
 export CLAUDE_OPENROUTER_DEFAULT_PROFILE=claude
+export CLAUDE_OPENROUTER_COMMANDS_DIR="$HOME/.local/bin"
 export CLAUDE_OPENROUTER_MAIN_MODEL=sonnet
 export CLAUDE_OPENROUTER_BASE_URL=https://openrouter.ai/api
 export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/claude-openrouter-router"
@@ -334,6 +382,9 @@ claude-openrouter --set-main-model sonnet           # Main Claude Code model for
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config                     # Redacts secrets
+claude-openrouter --install-profile-commands        # Create claude-ring, claude-qwen, etc.
+claude-openrouter --list-profile-commands           # Preview generated command names
+claude-openrouter --commands-dir                    # Prints command install directory
 claude-openrouter --config-path                     # Prints config file path
 ```
 

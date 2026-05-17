@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.4.0"
+VERSION="0.5.0"
 CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
 CONFIG_FILE="$CONFIG_DIR/config"
 PROFILES_FILE="$CONFIG_DIR/profiles"
+COMMANDS_DIR="${CLAUDE_OPENROUTER_COMMANDS_DIR:-$HOME/.local/bin}"
 
 usage() {
   cat <<'EOF'
@@ -19,6 +20,8 @@ Usage:
   claude-openrouter --set-base-url <url>
   claude-openrouter --set-timeout <milliseconds>
   claude-openrouter --show-config
+  claude-openrouter --install-profile-commands
+  claude-openrouter --commands-dir
   claude-openrouter --add-profile <name> <openrouter-model-id>
   claude-openrouter --remove-profile <name>
   claude-openrouter --list-profiles
@@ -37,6 +40,8 @@ Examples:
   claude-openrouter --set-key sk-or-v1-...
   printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
   claude-openrouter --set-default-profile free
+  claude-openrouter --install-profile-commands
+  claude-ring -p "Reply with exactly OK"
   claude-openrouter --show-config
   claude-openrouter claude
   claude-openrouter free
@@ -51,6 +56,7 @@ Environment:
   CLAUDE_OPENROUTER_BASE_URL          Default: https://openrouter.ai/api
   CLAUDE_OPENROUTER_CONFIG_DIR        Default: ~/.config/claude-openrouter-router
   CLAUDE_OPENROUTER_DEFAULT_PROFILE   Default: claude
+  CLAUDE_OPENROUTER_COMMANDS_DIR       Default: ~/.local/bin
   CLAUDE_OPENROUTER_MAIN_MODEL        Main Claude Code model override.
   API_TIMEOUT_MS                      Default: 3000000
 
@@ -175,6 +181,7 @@ show_config() {
 
   printf 'Config file: %s\n' "$CONFIG_FILE"
   printf 'Profiles file: %s\n' "$PROFILES_FILE"
+  printf 'Commands dir: %s\n' "$COMMANDS_DIR"
   printf '\nSaved config:\n'
   printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "$saved_key")"
   printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "${saved_base_url:-<default: https://openrouter.ai/api>}"
@@ -235,8 +242,79 @@ yes_answer() {
   esac
 }
 
+profile_command_name() {
+  local profile="$1"
+  case "$profile" in
+    claude)
+      printf '%s\n' "claude-openrouter-claude"
+      ;;
+    free)
+      printf '%s\n' "claude-or-free"
+      ;;
+    *)
+      printf 'claude-%s\n' "$profile"
+      ;;
+  esac
+}
+
+builtin_profiles() {
+  printf '%s\n' claude free nemotron ring owl pareto-code hunyuan
+}
+
+all_profile_names() {
+  builtin_profiles
+  if [[ -s "$PROFILES_FILE" ]]; then
+    awk -F= '
+      /^[[:space:]]*($|#)/ { next }
+      { print $1 }
+    ' "$PROFILES_FILE"
+  fi
+}
+
+write_profile_command() {
+  local profile="$1"
+  local command_name
+  command_name="$(profile_command_name "$profile")"
+
+  mkdir -p "$COMMANDS_DIR"
+  cat > "$COMMANDS_DIR/$command_name" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec claude-openrouter "$profile" "\$@"
+EOF
+  chmod 0755 "$COMMANDS_DIR/$command_name"
+  printf 'Installed %s -> claude-openrouter %s\n' "$COMMANDS_DIR/$command_name" "$profile"
+}
+
+install_profile_commands() {
+  local profile
+  while IFS= read -r profile; do
+    [[ -n "$profile" ]] || continue
+    write_profile_command "$profile"
+  done < <(all_profile_names | awk '!seen[$0]++')
+
+  case ":$PATH:" in
+    *":$COMMANDS_DIR:"*) ;;
+    *)
+      printf '\nNote: %s is not currently in PATH.\n' "$COMMANDS_DIR" >&2
+      printf 'Add this to your shell profile:\n' >&2
+      printf '  export PATH="%s:$PATH"\n' "$COMMANDS_DIR" >&2
+      ;;
+  esac
+}
+
+list_profile_commands() {
+  local profile command_name
+  while IFS= read -r profile; do
+    [[ -n "$profile" ]] || continue
+    command_name="$(profile_command_name "$profile")"
+    printf '%-24s claude-openrouter %s\n' "$command_name" "$profile"
+  done < <(all_profile_names | awk '!seen[$0]++')
+}
+
 run_setup() {
-  local existing_key api_key default_profile main_model base_url timeout add_custom custom_name custom_model verify_choice
+  local existing_key api_key default_profile main_model base_url timeout add_custom custom_name custom_model install_commands verify_choice
 
   existing_key="$(config_value OPENROUTER_API_KEY || true)"
 
@@ -303,6 +381,11 @@ EOF
     fi
     add_custom="$(prompt_with_default "Add another custom profile? (y/N)" "N")"
   done
+
+  install_commands="$(prompt_with_default "Install profile commands like claude-ring and claude-qwen? (Y/n)" "Y")"
+  if yes_answer "$install_commands"; then
+    install_profile_commands
+  fi
 
   printf '\nSetup complete.\n\n' >&2
   show_config
@@ -523,8 +606,20 @@ case "${1:-}" in
     show_config
     exit 0
     ;;
+  --install-profile-commands|install-commands)
+    install_profile_commands
+    exit 0
+    ;;
+  --list-profile-commands|list-commands)
+    list_profile_commands
+    exit 0
+    ;;
   --config-path)
     printf '%s\n' "$CONFIG_FILE"
+    exit 0
+    ;;
+  --commands-dir)
+    printf '%s\n' "$COMMANDS_DIR"
     exit 0
     ;;
   --add-profile)
