@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.2.0"
-BASE_URL="${CLAUDE_OPENROUTER_BASE_URL:-https://openrouter.ai/api}"
-DEFAULT_PROFILE="${CLAUDE_OPENROUTER_DEFAULT_PROFILE:-claude}"
+VERSION="0.3.0"
 CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
+CONFIG_FILE="$CONFIG_DIR/config"
 PROFILES_FILE="$CONFIG_DIR/profiles"
 
 usage() {
   cat <<'EOF'
 Usage:
   claude-openrouter [profile|model-id] [--dry-run|--print-env] [claude args...]
+  claude-openrouter --set-key <openrouter-api-key>
+  claude-openrouter --set-key-stdin
+  claude-openrouter --unset-key
+  claude-openrouter --set-default-profile <profile>
+  claude-openrouter --set-main-model <model>
+  claude-openrouter --set-base-url <url>
+  claude-openrouter --set-timeout <milliseconds>
+  claude-openrouter --show-config
   claude-openrouter --add-profile <name> <openrouter-model-id>
   claude-openrouter --remove-profile <name>
   claude-openrouter --list-profiles
@@ -25,6 +32,10 @@ Profiles:
   hunyuan      tencent/hy3-preview. Best-effort compatibility.
 
 Examples:
+  claude-openrouter --set-key sk-or-v1-...
+  printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
+  claude-openrouter --set-default-profile free
+  claude-openrouter --show-config
   claude-openrouter claude
   claude-openrouter free
   claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
@@ -41,6 +52,12 @@ Environment:
   CLAUDE_OPENROUTER_MAIN_MODEL        Main Claude Code model override.
   API_TIMEOUT_MS                      Default: 3000000
 
+Config file:
+  ~/.config/claude-openrouter-router/config
+
+Precedence:
+  Environment variables override saved config. Saved config overrides built-in defaults.
+
 Notes:
   OpenRouter's Claude Code docs require ANTHROPIC_API_KEY to be explicitly blank.
   The claude profile is the safest profile for Claude Code's tool-use and context features.
@@ -54,6 +71,114 @@ die() {
 
 need_command() {
   command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+config_value() {
+  local key="$1"
+  [[ -f "$CONFIG_FILE" ]] || return 1
+
+  awk -F= -v key="$key" '
+    /^[[:space:]]*($|#)/ { next }
+    $1 == key {
+      sub(/^[^=]*=/, "")
+      print
+      found = 1
+      exit
+    }
+    END { exit found ? 0 : 1 }
+  ' "$CONFIG_FILE"
+}
+
+config_or_default() {
+  local env_value="$1"
+  local key="$2"
+  local fallback="$3"
+  local saved_value
+
+  if [[ -n "$env_value" ]]; then
+    printf '%s\n' "$env_value"
+    return 0
+  fi
+
+  if saved_value="$(config_value "$key")"; then
+    printf '%s\n' "$saved_value"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback"
+}
+
+set_config_value() {
+  local key="${1:-}"
+  local value="${2:-}"
+
+  [[ -n "$key" && -n "$value" ]] || die "Usage: claude-openrouter --set-* <value>"
+
+  ensure_config_dir
+  touch "$CONFIG_FILE"
+  chmod 600 "$CONFIG_FILE"
+
+  if awk -F= -v key="$key" '$1 == key { found = 1 } END { exit found ? 0 : 1 }' "$CONFIG_FILE"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -F= -v key="$key" -v value="$value" '
+      $1 == key { print key "=" value; next }
+      { print }
+    ' "$CONFIG_FILE" > "$tmp_file"
+    mv "$tmp_file" "$CONFIG_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$CONFIG_FILE"
+  fi
+
+  chmod 600 "$CONFIG_FILE"
+}
+
+unset_config_value() {
+  local key="${1:-}"
+  [[ -n "$key" ]] || die "Missing config key"
+  [[ -f "$CONFIG_FILE" ]] || return 0
+
+  local tmp_file
+  tmp_file="$(mktemp)"
+  awk -F= -v key="$key" '$1 != key { print }' "$CONFIG_FILE" > "$tmp_file"
+  mv "$tmp_file" "$CONFIG_FILE"
+  chmod 600 "$CONFIG_FILE"
+}
+
+redact_secret() {
+  local value="$1"
+  if [[ -z "$value" ]]; then
+    printf '<not set>\n'
+  elif [[ "${#value}" -le 8 ]]; then
+    printf '<redacted>\n'
+  else
+    printf '%s...%s\n' "${value:0:6}" "${value: -4}"
+  fi
+}
+
+show_config() {
+  local saved_key saved_base_url saved_default_profile saved_main_model saved_timeout
+
+  saved_key="$(config_value OPENROUTER_API_KEY || true)"
+  saved_base_url="$(config_value CLAUDE_OPENROUTER_BASE_URL || true)"
+  saved_default_profile="$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || true)"
+  saved_main_model="$(config_value CLAUDE_OPENROUTER_MAIN_MODEL || true)"
+  saved_timeout="$(config_value API_TIMEOUT_MS || true)"
+
+  printf 'Config file: %s\n' "$CONFIG_FILE"
+  printf 'Profiles file: %s\n' "$PROFILES_FILE"
+  printf '\nSaved config:\n'
+  printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "$saved_key")"
+  printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "${saved_base_url:-<default: https://openrouter.ai/api>}"
+  printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "${saved_default_profile:-<default: claude>}"
+  printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "${saved_main_model:-<default: sonnet>}"
+  printf '  API_TIMEOUT_MS=%s\n' "${saved_timeout:-<default: 3000000>}"
+  printf '\nEffective config:\n'
+  printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "${OPENROUTER_API_KEY:-$saved_key}")"
+  printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "$BASE_URL"
+  printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "$DEFAULT_PROFILE"
+  printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "$MAIN_MODEL_DEFAULT"
+  printf '  API_TIMEOUT_MS=%s\n' "$TIMEOUT_MS"
 }
 
 is_valid_profile_name() {
@@ -198,12 +323,71 @@ print_env() {
   done
 }
 
+BASE_URL="$(config_or_default "${CLAUDE_OPENROUTER_BASE_URL:-}" CLAUDE_OPENROUTER_BASE_URL "https://openrouter.ai/api")"
+DEFAULT_PROFILE="$(config_or_default "${CLAUDE_OPENROUTER_DEFAULT_PROFILE:-}" CLAUDE_OPENROUTER_DEFAULT_PROFILE "claude")"
+MAIN_MODEL_DEFAULT="$(config_or_default "${CLAUDE_OPENROUTER_MAIN_MODEL:-}" CLAUDE_OPENROUTER_MAIN_MODEL "sonnet")"
+TIMEOUT_MS="$(config_or_default "${API_TIMEOUT_MS:-}" API_TIMEOUT_MS "3000000")"
+
 dry_run=0
 print_only=0
 
 case "${1:-}" in
   -h|--help|help)
     usage
+    exit 0
+    ;;
+  --set-key)
+    shift
+    set_config_value OPENROUTER_API_KEY "${1:-}"
+    printf 'Saved OPENROUTER_API_KEY to %s\n' "$CONFIG_FILE"
+    exit 0
+    ;;
+  --set-key-stdin)
+    IFS= read -r api_key_from_stdin || true
+    [[ -n "$api_key_from_stdin" ]] || die "No API key read from stdin"
+    set_config_value OPENROUTER_API_KEY "$api_key_from_stdin"
+    printf 'Saved OPENROUTER_API_KEY to %s\n' "$CONFIG_FILE"
+    exit 0
+    ;;
+  --unset-key)
+    unset_config_value OPENROUTER_API_KEY
+    printf 'Removed OPENROUTER_API_KEY from %s\n' "$CONFIG_FILE"
+    exit 0
+    ;;
+  --set-default-profile)
+    shift
+    [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-default-profile <profile>"
+    set_config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE "$1"
+    printf 'Saved default profile: %s\n' "$1"
+    exit 0
+    ;;
+  --set-main-model)
+    shift
+    [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-main-model <model>"
+    set_config_value CLAUDE_OPENROUTER_MAIN_MODEL "$1"
+    printf 'Saved main Claude Code model: %s\n' "$1"
+    exit 0
+    ;;
+  --set-base-url)
+    shift
+    [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-base-url <url>"
+    set_config_value CLAUDE_OPENROUTER_BASE_URL "$1"
+    printf 'Saved base URL: %s\n' "$1"
+    exit 0
+    ;;
+  --set-timeout)
+    shift
+    [[ "${1:-}" =~ ^[0-9]+$ ]] || die "Usage: claude-openrouter --set-timeout <milliseconds>"
+    set_config_value API_TIMEOUT_MS "$1"
+    printf 'Saved API timeout: %s ms\n' "$1"
+    exit 0
+    ;;
+  --show-config|config)
+    show_config
+    exit 0
+    ;;
+  --config-path)
+    printf '%s\n' "$CONFIG_FILE"
     exit 0
     ;;
   --add-profile)
@@ -242,7 +426,7 @@ fi
 
 need_command claude
 
-api_key="${OPENROUTER_API_KEY:-}"
+api_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
 [[ -n "$api_key" ]] || die "OPENROUTER_API_KEY is not set"
 
 resolved_model="$(resolve_model "$profile")"
@@ -250,7 +434,7 @@ model_opus="anthropic/claude-opus-4.7"
 model_sonnet="anthropic/claude-sonnet-4.6"
 model_haiku="anthropic/claude-haiku-4.5"
 subagent_model="$model_haiku"
-main_model="${CLAUDE_OPENROUTER_MAIN_MODEL:-sonnet}"
+main_model="$MAIN_MODEL_DEFAULT"
 
 if [[ "$resolved_model" != "claude" ]]; then
   model_opus="$resolved_model"
@@ -280,7 +464,7 @@ env_args=(
   "ANTHROPIC_SMALL_FAST_MODEL=$model_haiku"
   "CLAUDE_CODE_SUBAGENT_MODEL=$subagent_model"
   "CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK=1"
-  "API_TIMEOUT_MS=${API_TIMEOUT_MS:-3000000}"
+  "API_TIMEOUT_MS=$TIMEOUT_MS"
 )
 
 if [[ "$print_only" == "1" || "$dry_run" == "1" ]]; then
