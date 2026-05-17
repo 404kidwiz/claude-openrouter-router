@@ -180,13 +180,14 @@ claude-or-model openrouter/owl-alpha
 User-defined model profiles:
 
 ```bash
+claude-openrouter add-model qwen/qwen3-coder:free
 claude-openrouter --add-profile moonshotai/kimi-k2:free
 claude-openrouter --add-profile qwen/qwen3-coder:free
 claude-openrouter --add-profile my-qwen qwen/qwen3-coder:free
 claude-openrouter --list-profiles
 claude-openrouter install-commands
-claude-openrouter kimi-k2
 claude-qwen3-coder
+claude-openrouter kimi-k2
 ```
 
 You can pass normal Claude Code arguments after the profile:
@@ -214,6 +215,19 @@ Claude Code is optimized for Anthropic models. The `claude` profile is the relia
 
 You can add your own OpenRouter model aliases without editing the script.
 
+Fastest path:
+
+```bash
+claude-openrouter add-model qwen/qwen3-coder:free
+claude-qwen3-coder
+```
+
+`add-model` does the whole setup for that model:
+
+- Adds the custom profile.
+- Auto-generates a friendly profile name.
+- Creates the matching shortcut command.
+
 If you provide only a model ID, the router auto-generates a profile name from the model slug:
 
 ```bash
@@ -235,6 +249,13 @@ claude-openrouter --add-profile kimi moonshotai/kimi-k2:free
 ```
 
 Or choose the profile name yourself:
+
+```bash
+claude-openrouter add-model qwen qwen/qwen3-coder:free
+claude-qwen
+```
+
+Lower-level equivalent:
 
 ```bash
 claude-openrouter --add-profile qwen qwen/qwen3-coder:free
@@ -415,9 +436,10 @@ claude-openrouter --set-main-model sonnet           # Main Claude Code model for
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config                     # Redacts secrets
-claude-openrouter install-commands        # Create shortcuts like claude-ring and claude-qwen
-claude-openrouter list-commands           # Preview shortcut command names
-claude-openrouter commands-dir            # Print shortcut command install directory
+claude-openrouter add-model qwen/qwen3-coder:free  # Add model and create claude-qwen3-coder
+claude-openrouter install-commands                 # Create shortcuts like claude-ring and claude-qwen
+claude-openrouter list-commands                    # Preview shortcut command names
+claude-openrouter commands-dir                     # Print shortcut command install directory
 claude-openrouter --config-path                     # Prints config file path
 ```
 

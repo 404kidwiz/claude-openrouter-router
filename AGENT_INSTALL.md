@@ -82,14 +82,21 @@ claude-openrouter --set-default-profile claude
 If the user wants a custom OpenRouter model:
 
 ```bash
+claude-openrouter add-model <provider/model-id>
+```
+
+That single command adds the profile, auto-generates a safe command name, and installs the shortcut.
+
+Lower-level equivalent:
+
+```bash
 claude-openrouter --add-profile <name> <provider/model-id>
 ```
 
 Example:
 
 ```bash
-claude-openrouter --add-profile qwen/qwen3-coder:free
-claude-openrouter install-commands
+claude-openrouter add-model qwen/qwen3-coder:free
 claude-qwen3-coder
 ```
 
@@ -98,8 +105,7 @@ If the user provides only a model ID, the router auto-generates the profile and 
 Users can still choose a shorter name explicitly:
 
 ```bash
-claude-openrouter --add-profile qwen qwen/qwen3-coder:free
-claude-openrouter install-commands
+claude-openrouter add-model qwen qwen/qwen3-coder:free
 claude-qwen
 ```
 
