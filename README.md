@@ -227,6 +227,7 @@ claude-qwen3-coder
 - Adds the custom profile.
 - Auto-generates a friendly profile name.
 - Creates the matching shortcut command.
+- Prints the exact command to run next.
 
 If you provide only a model ID, the router auto-generates a profile name from the model slug:
 
@@ -379,6 +380,8 @@ Easy path:
 ```bash
 claude-openrouter --setup
 ```
+
+When setup finishes, it prints the command to run next, plus a safe dry-run command for checking the selected profile.
 
 Manual path:
 

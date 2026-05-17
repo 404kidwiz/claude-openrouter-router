@@ -86,6 +86,7 @@ claude-openrouter add-model <provider/model-id>
 ```
 
 That single command adds the profile, auto-generates a safe command name, and installs the shortcut.
+It also prints the exact command the user should run next.
 
 Lower-level equivalent:
 

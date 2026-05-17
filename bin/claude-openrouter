@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.5.2"
+VERSION="0.5.3"
 CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
 CONFIG_FILE="$CONFIG_DIR/config"
 PROFILES_FILE="$CONFIG_DIR/profiles"
@@ -308,6 +308,37 @@ EOF
   printf 'Installed %s -> claude-openrouter %s\n' "$COMMANDS_DIR/$command_name" "$profile"
 }
 
+print_command_help() {
+  local profile="$1"
+  local command_name
+
+  command_name="$(profile_command_name "$profile")"
+
+  printf '\nReady to run:\n'
+  if command -v "$command_name" >/dev/null 2>&1 || [[ -x "$COMMANDS_DIR/$command_name" ]]; then
+    printf '  %s\n' "$command_name"
+    printf '  %s -p "Reply with exactly OK"\n' "$command_name"
+  else
+    printf '  claude-openrouter %s\n' "$profile"
+    printf '  claude-openrouter %s -p "Reply with exactly OK"\n' "$profile"
+    printf '\nTo create the shorter %s command:\n' "$command_name"
+    printf '  claude-openrouter install-commands\n'
+  fi
+  printf '\nEquivalent direct router command:\n'
+  printf '  claude-openrouter %s\n' "$profile"
+  printf '\nUseful checks:\n'
+  printf '  claude-openrouter --dry-run %s\n' "$profile"
+  printf '  claude-openrouter list-commands\n'
+
+  case ":$PATH:" in
+    *":$COMMANDS_DIR:"*) ;;
+    *)
+      printf '\nIf %s is not found, add the commands directory to PATH:\n' "$command_name"
+      printf '  export PATH="%s:$PATH"\n' "$COMMANDS_DIR"
+      ;;
+  esac
+}
+
 install_profile_commands() {
   local profile
   while IFS= read -r profile; do
@@ -323,6 +354,13 @@ install_profile_commands() {
       printf '  export PATH="%s:$PATH"\n' "$COMMANDS_DIR" >&2
       ;;
   esac
+
+  printf '\nShortcut commands are ready. Try one of these:\n'
+  printf '  claude-ring\n'
+  printf '  claude-owl\n'
+  printf '  claude-nemotron\n'
+  printf '\nList every available shortcut:\n'
+  printf '  claude-openrouter list-commands\n'
 }
 
 list_profile_commands() {
@@ -419,6 +457,8 @@ EOF
     printf '\nDry run:\n' >&2
     "$0" --dry-run "$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || printf '%s\n' "$DEFAULT_PROFILE")"
   fi
+
+  print_command_help "$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || printf '%s\n' "$DEFAULT_PROFILE")"
 }
 
 is_valid_profile_name() {
@@ -500,6 +540,7 @@ add_model() {
 
   add_profile "$name" "$model"
   write_profile_command "$name"
+  print_command_help "$name"
 }
 
 remove_profile() {
