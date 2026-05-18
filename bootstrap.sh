@@ -30,6 +30,11 @@ download_tarball() {
 
 mkdir -p "$(dirname "$install_dir")"
 
+if [[ -z "$install_dir" || "$install_dir" == "/" || "$install_dir" == "$HOME" || ! "$install_dir" == */* ]]; then
+  printf 'Error: refusing to use install directory "%s". Set CLAUDE_OPENROUTER_INSTALL_DIR to a safe path.\n' "$install_dir" >&2
+  exit 1
+fi
+
 if need_command git; then
   if [[ -d "$install_dir/.git" ]]; then
     git -C "$install_dir" fetch --quiet origin "$ref"

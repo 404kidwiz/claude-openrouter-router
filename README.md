@@ -2,9 +2,15 @@
 
 ![Claude OpenRouter Router hero](assets/claude-openrouter-router-hero.png)
 
+![Setup demo](assets/demo.gif)
+
 Small shell launchers for running Claude Code through OpenRouter's Anthropic-compatible endpoint.
 
 The goal is simple: keep Claude Code's environment clean, make provider switching obvious, and offer a safe default that follows OpenRouter's Claude Code documentation.
+
+> **Note:** Shortcut commands (`claude-ring`, `claude-owl`, etc.) do **not** replace your existing `claude` command. The original Claude Code binary stays untouched. Use `claude-openrouter` or a shortcut when you want OpenRouter routing.
+
+**Compatibility:** macOS and Linux. Requires bash 4+. Not tested on Windows (WSL may work).
 
 ## What This Does
 
@@ -111,9 +117,14 @@ printf '%s' 'sk-or-v1-...' | claude-openrouter --set-key-stdin
 claude-openrouter --unset-key
 claude-openrouter --set-default-profile free
 claude-openrouter --set-main-model sonnet
+claude-openrouter --set-opus-model anthropic/claude-opus-4-7
+claude-openrouter --set-sonnet-model anthropic/claude-sonnet-4-6
+claude-openrouter --set-haiku-model anthropic/claude-haiku-4-5-20251001
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config
+claude-openrouter --update
+claude-openrouter --uninstall
 claude-openrouter install-commands
 claude-openrouter list-commands
 claude-openrouter commands-dir
@@ -410,6 +421,9 @@ The file is written with `0600` permissions and uses simple `KEY=value` lines:
 OPENROUTER_API_KEY=sk-or-v1-...
 CLAUDE_OPENROUTER_DEFAULT_PROFILE=claude
 CLAUDE_OPENROUTER_MAIN_MODEL=sonnet
+CLAUDE_OPUS_MODEL=anthropic/claude-opus-4-7
+CLAUDE_SONNET_MODEL=anthropic/claude-sonnet-4-6
+CLAUDE_HAIKU_MODEL=anthropic/claude-haiku-4-5-20251001
 CLAUDE_OPENROUTER_BASE_URL=https://openrouter.ai/api
 API_TIMEOUT_MS=3000000
 ```
@@ -426,6 +440,9 @@ Optional environment variables:
 export CLAUDE_OPENROUTER_DEFAULT_PROFILE=claude
 export CLAUDE_OPENROUTER_COMMANDS_DIR="$HOME/.local/bin"
 export CLAUDE_OPENROUTER_MAIN_MODEL=sonnet
+export CLAUDE_OPUS_MODEL=anthropic/claude-opus-4-7
+export CLAUDE_SONNET_MODEL=anthropic/claude-sonnet-4-6
+export CLAUDE_HAIKU_MODEL=anthropic/claude-haiku-4-5-20251001
 export CLAUDE_OPENROUTER_BASE_URL=https://openrouter.ai/api
 export CLAUDE_OPENROUTER_CONFIG_DIR="$HOME/.config/claude-openrouter-router"
 export API_TIMEOUT_MS=3000000
@@ -442,9 +459,15 @@ claude-openrouter --set-key-stdin                   # Read OpenRouter API key fr
 claude-openrouter --unset-key                       # Remove saved API key
 claude-openrouter --set-default-profile free        # Change default profile
 claude-openrouter --set-main-model sonnet           # Main Claude Code model for strict Claude mode
+claude-openrouter --set-opus-model anthropic/claude-opus-4-7
+claude-openrouter --set-sonnet-model anthropic/claude-sonnet-4-6
+claude-openrouter --set-haiku-model anthropic/claude-haiku-4-5-20251001
 claude-openrouter --set-base-url https://openrouter.ai/api
 claude-openrouter --set-timeout 3000000
 claude-openrouter --show-config                     # Redacts secrets
+claude-openrouter --update                           # Pull latest from git and reinstall
+claude-openrouter --uninstall                        # Preview what will be removed
+claude-openrouter --uninstall --yes                  # Remove all installed files
 claude-openrouter add-model qwen/qwen3-coder:free  # Add model and create claude-qwen3-coder
 claude-openrouter install-commands                 # Create shortcuts like claude-ring and claude-qwen
 claude-openrouter list-commands                    # Preview shortcut command names
@@ -480,7 +503,6 @@ claude-pareto-code
 Good next enhancements:
 
 - Add `claude-openrouter doctor` to check `claude`, `PATH`, config permissions, OpenRouter connectivity, and selected model availability.
-- Add `claude-openrouter update` to rerun `bootstrap.sh` from the installed checkout.
 - Add shell completions for profiles and config commands.
 - Add model metadata caching from OpenRouter so users can search models from the terminal.
 - Add signed release archives or Homebrew packaging once the CLI stabilizes.

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Shellcheck
+        run: |
+          shellcheck -s bash bin/claude-openrouter \
+            bootstrap.sh \
+            install.sh \
+            completions/claude-openrouter.bash
+        continue-on-error: true
+
+  install-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install
+        run: |
+          PREFIX="$HOME/.local" ./install.sh
+
+      - name: Verify binary
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter --version
+          claude-openrouter --help
+
+      - name: Verify config path
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter --config-path
+
+      - name: Verify show-config
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter --show-config
+
+      - name: Install shortcut commands
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter install-commands
+
+      - name: List shortcut commands
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter list-commands
+
+      - name: Add custom model
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter add-model qwen/qwen3-coder:free
+
+      - name: Doctor check
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude-openrouter doctor || true
+
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: |
+          bash -n bin/claude-openrouter
+          bash -n bootstrap.sh
+          bash -n install.sh

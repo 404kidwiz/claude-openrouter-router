@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 CONFIG_DIR="${CLAUDE_OPENROUTER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-openrouter-router}"
 CONFIG_FILE="$CONFIG_DIR/config"
 PROFILES_FILE="$CONFIG_DIR/profiles"
 COMMANDS_DIR="${CLAUDE_OPENROUTER_COMMANDS_DIR:-$HOME/.local/bin}"
+SESSION_LOG="$CONFIG_DIR/sessions.log"
 
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
   BOLD="$(printf '\033[1m')"
@@ -64,6 +65,9 @@ Usage:
   claude-openrouter --unset-key
   claude-openrouter --set-default-profile <profile>
   claude-openrouter --set-main-model <model>
+  claude-openrouter --set-opus-model <model>
+  claude-openrouter --set-sonnet-model <model>
+  claude-openrouter --set-haiku-model <model>
   claude-openrouter --set-base-url <url>
   claude-openrouter --set-timeout <milliseconds>
   claude-openrouter --show-config
@@ -76,6 +80,15 @@ Usage:
   claude-openrouter --add-profile <name> <openrouter-model-id>
   claude-openrouter --remove-profile <name>
   claude-openrouter --list-profiles
+  claude-openrouter --update
+  claude-openrouter --uninstall [--yes]
+  claude-openrouter doctor
+  claude-openrouter --switch
+  claude-openrouter --list-models [search]
+  claude-openrouter --cost
+  claude-openrouter --history
+  claude-openrouter --config-profile <name>
+  claude-openrouter --list-config-profiles
 
 Profiles:
   claude       Strict Claude compatibility. Uses Anthropic first-party models through OpenRouter.
@@ -109,6 +122,9 @@ Environment:
   CLAUDE_OPENROUTER_DEFAULT_PROFILE   Default: claude
   CLAUDE_OPENROUTER_COMMANDS_DIR       Default: ~/.local/bin
   CLAUDE_OPENROUTER_MAIN_MODEL        Main Claude Code model override.
+  CLAUDE_OPUS_MODEL                   Default: anthropic/claude-opus-4-7
+  CLAUDE_SONNET_MODEL                 Default: anthropic/claude-sonnet-4-6
+  CLAUDE_HAIKU_MODEL                  Default: anthropic/claude-haiku-4-5-20251001
   API_TIMEOUT_MS                      Default: 3000000
 
 Config file:
@@ -173,6 +189,8 @@ set_config_value() {
 
   [[ -n "$key" && -n "$value" ]] || die "Usage: claude-openrouter --set-* <value>"
 
+  [[ "$value" != *$'\n'* && "$value" != *\\* ]] || die "Value contains invalid characters (backslashes or newlines not allowed)"
+
   ensure_config_dir
   touch "$CONFIG_FILE"
   chmod 600 "$CONFIG_FILE"
@@ -223,11 +241,17 @@ show_config() {
   saved_base_url="$(config_value CLAUDE_OPENROUTER_BASE_URL || true)"
   saved_default_profile="$(config_value CLAUDE_OPENROUTER_DEFAULT_PROFILE || true)"
   saved_main_model="$(config_value CLAUDE_OPENROUTER_MAIN_MODEL || true)"
+  saved_opus_model="$(config_value CLAUDE_OPUS_MODEL || true)"
+  saved_sonnet_model="$(config_value CLAUDE_SONNET_MODEL || true)"
+  saved_haiku_model="$(config_value CLAUDE_HAIKU_MODEL || true)"
   saved_timeout="$(config_value API_TIMEOUT_MS || true)"
   effective_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
   effective_base_url="$(config_or_default "${CLAUDE_OPENROUTER_BASE_URL:-}" CLAUDE_OPENROUTER_BASE_URL "https://openrouter.ai/api")"
   effective_default_profile="$(config_or_default "${CLAUDE_OPENROUTER_DEFAULT_PROFILE:-}" CLAUDE_OPENROUTER_DEFAULT_PROFILE "claude")"
   effective_main_model="$(config_or_default "${CLAUDE_OPENROUTER_MAIN_MODEL:-}" CLAUDE_OPENROUTER_MAIN_MODEL "sonnet")"
+  effective_opus_model="$(config_or_default "${CLAUDE_OPUS_MODEL:-}" CLAUDE_OPUS_MODEL "anthropic/claude-opus-4-7")"
+  effective_sonnet_model="$(config_or_default "${CLAUDE_SONNET_MODEL:-}" CLAUDE_SONNET_MODEL "anthropic/claude-sonnet-4-6")"
+  effective_haiku_model="$(config_or_default "${CLAUDE_HAIKU_MODEL:-}" CLAUDE_HAIKU_MODEL "anthropic/claude-haiku-4-5-20251001")"
   effective_timeout="$(config_or_default "${API_TIMEOUT_MS:-}" API_TIMEOUT_MS "3000000")"
 
   ui_title "Claude OpenRouter Config"
@@ -239,12 +263,18 @@ show_config() {
   printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "${saved_base_url:-<default: https://openrouter.ai/api>}"
   printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "${saved_default_profile:-<default: claude>}"
   printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "${saved_main_model:-<default: sonnet>}"
+  printf '  CLAUDE_OPUS_MODEL=%s\n' "${saved_opus_model:-<default: anthropic/claude-opus-4-7>}"
+  printf '  CLAUDE_SONNET_MODEL=%s\n' "${saved_sonnet_model:-<default: anthropic/claude-sonnet-4-6>}"
+  printf '  CLAUDE_HAIKU_MODEL=%s\n' "${saved_haiku_model:-<default: anthropic/claude-haiku-4-5-20251001>}"
   printf '  API_TIMEOUT_MS=%s\n' "${saved_timeout:-<default: 3000000>}"
   ui_step "Effective config"
   printf '  OPENROUTER_API_KEY=%s\n' "$(redact_secret "$effective_key")"
   printf '  CLAUDE_OPENROUTER_BASE_URL=%s\n' "$effective_base_url"
   printf '  CLAUDE_OPENROUTER_DEFAULT_PROFILE=%s\n' "$effective_default_profile"
   printf '  CLAUDE_OPENROUTER_MAIN_MODEL=%s\n' "$effective_main_model"
+  printf '  CLAUDE_OPUS_MODEL=%s\n' "$effective_opus_model"
+  printf '  CLAUDE_SONNET_MODEL=%s\n' "$effective_sonnet_model"
+  printf '  CLAUDE_HAIKU_MODEL=%s\n' "$effective_haiku_model"
   printf '  API_TIMEOUT_MS=%s\n' "$effective_timeout"
 }
 
@@ -343,6 +373,7 @@ all_profile_names() {
 write_profile_command() {
   local profile="$1"
   local command_name
+  is_valid_profile_name "$profile" || die "Invalid profile name: $profile"
   command_name="$(profile_command_name "$profile")"
 
   mkdir -p "$COMMANDS_DIR"
@@ -525,6 +556,7 @@ is_builtin_profile() {
 
 ensure_config_dir() {
   mkdir -p "$CONFIG_DIR"
+  chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 }
 
 lookup_custom_profile() {
@@ -719,6 +751,27 @@ case "${1:-}" in
     printf 'Saved main Claude Code model: %s\n' "$1"
     exit 0
     ;;
+  --set-opus-model)
+    shift
+    [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-opus-model <model>"
+    set_config_value CLAUDE_OPUS_MODEL "$1"
+    printf 'Saved Opus model: %s\n' "$1"
+    exit 0
+    ;;
+  --set-sonnet-model)
+    shift
+    [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-sonnet-model <model>"
+    set_config_value CLAUDE_SONNET_MODEL "$1"
+    printf 'Saved Sonnet model: %s\n' "$1"
+    exit 0
+    ;;
+  --set-haiku-model)
+    shift
+    [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-haiku-model <model>"
+    set_config_value CLAUDE_HAIKU_MODEL "$1"
+    printf 'Saved Haiku model: %s\n' "$1"
+    exit 0
+    ;;
   --set-base-url)
     shift
     [[ -n "${1:-}" ]] || die "Usage: claude-openrouter --set-base-url <url>"
@@ -776,6 +829,342 @@ case "${1:-}" in
     printf 'claude-openrouter %s\n' "$VERSION"
     exit 0
     ;;
+  --uninstall|uninstall)
+    shift
+    confirm="${1:-}"
+    if [[ "$confirm" != "--yes" ]]; then
+      printf 'This will remove:\n'
+      printf '  Config: %s\n' "$CONFIG_DIR"
+      printf '  Commands: %s/claude-*\n' "$COMMANDS_DIR"
+      printf '  Install: %s\n' "${CLAUDE_OPENROUTER_INSTALL_DIR:-$HOME/.local/share/claude-openrouter-router}"
+      printf '\nRun "claude-openrouter --uninstall --yes" to confirm.\n'
+      exit 0
+    fi
+
+    ui_step "Removing shortcut commands"
+    for cmd in "$COMMANDS_DIR"/claude-*; do
+      if [[ -x "$cmd" && ! -L "$cmd" ]]; then
+        rm -f "$cmd"
+        printf '  Removed %s\n' "$cmd"
+      fi
+    done
+
+    ui_step "Removing config"
+    if [[ -L "$CONFIG_DIR" ]]; then
+      printf '  Skipping symbolic link at %s\n' "$CONFIG_DIR"
+    elif [[ -d "$CONFIG_DIR" ]]; then
+      rm -rf "$CONFIG_DIR"
+      printf '  Removed %s\n' "$CONFIG_DIR"
+    fi
+
+    ui_step "Removing install directory"
+    install_dir="${CLAUDE_OPENROUTER_INSTALL_DIR:-$HOME/.local/share/claude-openrouter-router}"
+    if [[ -z "$install_dir" || "$install_dir" == "/" || "$install_dir" == "$HOME" || ! "$install_dir" == */* ]]; then
+      printf '  Skipping unsafe install directory: %s\n' "$install_dir"
+    elif [[ -L "$install_dir" ]]; then
+      printf '  Skipping symbolic link at %s\n' "$install_dir"
+    elif [[ -d "$install_dir" ]]; then
+      rm -rf "$install_dir"
+      printf '  Removed %s\n' "$install_dir"
+    fi
+
+    ui_success "Uninstall complete."
+    exit 0
+    ;;
+  --update|update)
+    ui_step "Checking for updates"
+    install_dir="${CLAUDE_OPENROUTER_INSTALL_DIR:-$HOME/.local/share/claude-openrouter-router}"
+
+    if [[ ! -d "$install_dir/.git" ]]; then
+      printf 'Error: Auto-update requires a git clone. Re-run bootstrap.sh to update:\n' >&2
+      printf '  curl -fsSL https://raw.githubusercontent.com/404kidwiz/claude-openrouter-router/main/bootstrap.sh | bash\n' >&2
+      exit 1
+    fi
+
+    need_command git
+
+    current_ref="$(git -C "$install_dir" rev-parse --short HEAD)"
+    git -C "$install_dir" fetch --quiet origin main 2>/dev/null || die "Could not fetch updates. Check your network connection."
+    latest_ref="$(git -C "$install_dir" rev-parse --short origin/main)"
+
+    if [[ "$current_ref" == "$latest_ref" ]]; then
+      ui_success "Already up to date ($current_ref)."
+      exit 0
+    fi
+
+    printf 'Update available: %s -> %s\n' "$current_ref" "$latest_ref"
+    git -C "$install_dir" pull --ff-only --quiet origin main || die "Update failed. You may have local modifications in $install_dir"
+
+    PREFIX="${PREFIX:-$HOME/.local}" "$install_dir/install.sh"
+    ui_success "Updated to $latest_ref"
+    exit 0
+    ;;
+  doctor|--doctor)
+    ui_title "Claude OpenRouter Doctor"
+    pass=0 fail=0
+
+    ui_step "Checking claude binary"
+    if command -v claude >/dev/null 2>&1; then
+      ui_success "claude found at $(command -v claude)"
+      ((pass++))
+    else
+      printf '  FAIL: claude binary not found in PATH\n'
+      ((fail++))
+    fi
+
+    ui_step "Checking PATH includes commands directory"
+    case ":$PATH:" in
+      *":$COMMANDS_DIR:"*)
+        ui_success "$COMMANDS_DIR is in PATH"
+        ((pass++))
+        ;;
+      *)
+        printf '  FAIL: %s is not in PATH\n' "$COMMANDS_DIR"
+        ((fail++))
+        ;;
+    esac
+
+    ui_step "Checking config directory"
+    if [[ -d "$CONFIG_DIR" ]]; then
+      local perms
+      perms="$(stat -f '%Lp' "$CONFIG_DIR" 2>/dev/null || stat -c '%a' "$CONFIG_DIR" 2>/dev/null || echo 'unknown')"
+      if [[ "$perms" == "700" || "$perms" == "600" ]]; then
+        ui_success "Config dir exists with secure permissions ($perms)"
+        ((pass++))
+      else
+        printf '  WARN: Config dir permissions are %s (expected 700)\n' "$perms"
+        ui_warn "Run: chmod 700 $CONFIG_DIR"
+        ((pass++))
+      fi
+    else
+      printf '  FAIL: Config directory not found at %s\n' "$CONFIG_DIR"
+      printf '  Fix: claude-openrouter --setup\n'
+      ((fail++))
+    fi
+
+    ui_step "Checking API key"
+    local check_key
+    check_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
+    if [[ -n "$check_key" ]]; then
+      ui_success "API key is set ($(redact_secret "$check_key"))"
+      ((pass++))
+    else
+      printf '  FAIL: No API key configured\n'
+      printf '  Fix: claude-openrouter --set-key <key> or export OPENROUTER_API_KEY=<key>\n'
+      ((fail++))
+    fi
+
+    ui_step "Checking OpenRouter endpoint"
+    local http_code
+    http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$BASE_URL/models" 2>/dev/null || echo '000')"
+    if [[ "$http_code" == "200" ]]; then
+      ui_success "OpenRouter endpoint reachable ($BASE_URL)"
+      ((pass++))
+    else
+      printf '  FAIL: OpenRouter returned HTTP %s\n' "$http_code"
+      printf '  Check your network connection and base URL\n'
+      ((fail++))
+    fi
+
+    ui_step "Checking default profile"
+    if resolve_model "$DEFAULT_PROFILE" >/dev/null 2>&1; then
+      local resolved
+      resolved="$(resolve_model "$DEFAULT_PROFILE")"
+      ui_success "Default profile '$DEFAULT_PROFILE' resolves to '$resolved'"
+      ((pass++))
+    else
+      printf '  FAIL: Default profile '%s' could not be resolved\n' "$DEFAULT_PROFILE"
+      ((fail++))
+    fi
+
+    ui_step "Checking shortcut commands"
+    local cmd_count=0
+    for cmd in "$COMMANDS_DIR"/claude-*; do
+      if [[ -x "$cmd" && ! -L "$cmd" ]]; then
+        ((cmd_count++))
+      fi
+    done
+    if [[ "$cmd_count" -gt 0 ]]; then
+      ui_success "$cmd_count shortcut commands installed"
+      ((pass++))
+    else
+      printf '  WARN: No shortcut commands found\n'
+      printf '  Fix: claude-openrouter install-commands\n'
+      ((pass++))
+    fi
+
+    printf '\n'
+    ui_title "Doctor Results"
+    printf '  Passed: %d\n' "$pass"
+    printf '  Failed: %d\n' "$fail"
+    if [[ "$fail" -eq 0 ]]; then
+      ui_success "All checks passed"
+    else
+      printf '\nRun the suggested fixes above, then re-run doctor.\n'
+      exit 1
+    fi
+    exit 0
+    ;;
+  --switch|switch)
+    ui_title "Select a Profile"
+    local profiles=() models=() i=1
+    while IFS= read -r p; do
+      [[ -n "$p" ]] || continue
+      profiles+=("$p")
+      models+=("$(resolve_model "$p")")
+      printf '  %s%s)%s %s%-20s%s %s\n' "$BOLD" "$i" "$RESET" "$CYAN" "$p" "$RESET" "${models[$((i-1))]}"
+      ((i++))
+    done < <(all_profile_names | awk '!seen[$0]++')
+
+    if [[ ${#profiles[@]} -eq 0 ]]; then
+      die "No profiles available. Run claude-openrouter --setup first."
+    fi
+
+    printf '\n%sEnter number [1-%s] (or profile name): %s' "$BOLD" "${#profiles[@]}" "$RESET"
+    local choice
+    IFS= read -r choice || true
+
+    local selected_profile=""
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#profiles[@]}" ]]; then
+      selected_profile="${profiles[$((choice-1))]}"
+    elif [[ -n "$choice" ]]; then
+      selected_profile="$choice"
+    fi
+
+    [[ -n "$selected_profile" ]] || die "No profile selected"
+    printf '\n%sLaunching with profile: %s (%s)%s\n' "$GREEN" "$selected_profile" "$(resolve_model "$selected_profile")" "$RESET"
+    set -- "$selected_profile" "$@"
+    ;;
+  --list-models|list-models)
+    shift
+    search="${1:-}"
+    ui_step "Fetching models from OpenRouter"
+    api_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
+    [[ -n "$api_key" ]] || die "OPENROUTER_API_KEY is not set"
+
+    local models_json
+    models_json="$(curl -s -H "Authorization: Bearer $api_key" "$BASE_URL/models" 2>/dev/null)" || die "Failed to fetch models from OpenRouter"
+
+    if [[ -n "$search" ]]; then
+      printf 'Models matching "%s":\n' "$search"
+      printf '%s\n' "$models_json" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    models = data.get('data', data) if isinstance(data, dict) else data
+    search = '$search'.lower()
+    for m in models:
+        mid = m.get('id','')
+        if search in mid.lower():
+            pricing = m.get('pricing', {})
+            prompt_p = pricing.get('prompt', 'N/A')
+            compl_p = pricing.get('completion', 'N/A')
+            ctx = m.get('context_length', 'N/A')
+            print(f'  {mid:<50} ctx={ctx:<8} prompt={prompt_p}/1M  completion={compl_p}/1M')
+except Exception as e:
+    print(f'Error parsing response: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null || printf '  No results or failed to parse response.\n'
+    else
+      printf '%s\n' "$models_json" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    models = data.get('data', data) if isinstance(data, dict) else data
+    print(f'  Total models: {len(models)}')
+    print()
+    print(f'  {\"Model ID\":<50} {\"Context\":<8} {\"Prompt/1M\":<12} {\"Compl/1M\":<12}')
+    print(f'  {\"-\"*50} {\"-\"*8} {\"-\"*12} {\"-\"*12}')
+    for m in sorted(models, key=lambda x: x.get('id','')):
+        mid = m.get('id','')
+        pricing = m.get('pricing', {})
+        prompt_p = pricing.get('prompt', 'N/A')
+        compl_p = pricing.get('completion', 'N/A')
+        ctx = str(m.get('context_length', 'N/A'))
+        print(f'  {mid:<50} {ctx:<8} {str(prompt_p):<12} {str(compl_p):<12}')
+except Exception as e:
+    print(f'Error parsing response: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null || printf '  Failed to parse response.\n'
+      printf '\n  Tip: claude-openrouter --list-models claude\n'
+    fi
+    exit 0
+    ;;
+  --cost|cost)
+    ui_step "Fetching usage from OpenRouter"
+    api_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
+    [[ -n "$api_key" ]] || die "OPENROUTER_API_KEY is not set"
+
+    local usage_json
+    usage_json="$(curl -s -H "Authorization: Bearer $api_key" "https://openrouter.ai/api/v1/auth/key" 2>/dev/null)" || die "Failed to fetch usage data"
+
+    printf '%s\n' "$usage_json" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    d = data.get('data', data)
+    label = d.get('label', 'N/A')
+    limit = d.get('limit', 'N/A')
+    usage = d.get('usage', 'N/A')
+    remaining = d.get('limit_remaining', 'N/A')
+    rate_limit = d.get('rate_limit', {})
+    print(f'  Account: {label}')
+    print(f'  Usage:   {usage}')
+    print(f'  Limit:   {limit}')
+    print(f'  Remaining: {remaining}')
+    if rate_limit:
+        print(f'  Rate limit:')
+        for k, v in rate_limit.items():
+            print(f'    {k}: {v}')
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null || printf '  Failed to parse usage data.\n'
+    exit 0
+    ;;
+  --history|history)
+    if [[ ! -s "$SESSION_LOG" ]]; then
+      printf 'No session history found.\n'
+      exit 0
+    fi
+    ui_title "Session History"
+    printf '%-20s %-20s %-15s %-10s %s\n' "Date" "Profile" "Model" "Duration" "Args"
+    printf '%s\n' "$(printf -- '-%.0s' {1..80})"
+    tail -50 "$SESSION_LOG" | while IFS='|' read -r date profile model duration args; do
+      printf '%-20s %-20s %-15s %-10s %s\n' "$date" "$profile" "$model" "$duration" "$args"
+    done
+    exit 0
+    ;;
+  --config-profile)
+    shift
+    local cp_name="${1:-}"
+    [[ -n "$cp_name" ]] || die "Usage: claude-openrouter --config-profile <name>"
+    local cp_file="$CONFIG_DIR/config-$cp_name"
+    if [[ ! -f "$cp_file" ]]; then
+      printf 'Config profile "%s" not found at %s\n' "$cp_name" "$cp_file"
+      printf 'Create it by copying your config: cp %s %s\n' "$CONFIG_FILE" "$cp_file"
+      exit 1
+    fi
+    cp "$cp_file" "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+    ui_success "Switched to config profile: $cp_name"
+    exit 0
+    ;;
+  --list-config-profiles|list-config-profiles)
+    ui_title "Config Profiles"
+    printf '  %-20s %s\n' "Profile" "Path"
+    printf '  %s\n' "$(printf -- '-%.0s' {1..40})"
+    if [[ -f "$CONFIG_FILE" ]]; then
+      printf '  %-20s %s (active)\n' "default" "$CONFIG_FILE"
+    fi
+    for cpf in "$CONFIG_DIR"/config-*; do
+      [[ -f "$cpf" ]] || continue
+      local cpn
+      cpn="$(basename "$cpf" | sed 's/^config-//')"
+      printf '  %-20s %s\n' "$cpn" "$cpf"
+    done
+    exit 0
+    ;;
   --dry-run)
     dry_run=1
     shift
@@ -798,9 +1187,9 @@ api_key="$(config_or_default "${OPENROUTER_API_KEY:-}" OPENROUTER_API_KEY "")"
 [[ -n "$api_key" ]] || die "OPENROUTER_API_KEY is not set"
 
 resolved_model="$(resolve_model "$profile")"
-model_opus="anthropic/claude-opus-4.7"
-model_sonnet="anthropic/claude-sonnet-4.6"
-model_haiku="anthropic/claude-haiku-4.5"
+model_opus="$(config_or_default "${CLAUDE_OPUS_MODEL:-}" CLAUDE_OPUS_MODEL "anthropic/claude-opus-4-7")"
+model_sonnet="$(config_or_default "${CLAUDE_SONNET_MODEL:-}" CLAUDE_SONNET_MODEL "anthropic/claude-sonnet-4-6")"
+model_haiku="$(config_or_default "${CLAUDE_HAIKU_MODEL:-}" CLAUDE_HAIKU_MODEL "anthropic/claude-haiku-4-5-20251001")"
 subagent_model="$model_haiku"
 main_model="$MAIN_MODEL_DEFAULT"
 
@@ -850,5 +1239,8 @@ if [[ "$print_only" == "1" || "$dry_run" == "1" ]]; then
   [[ "$dry_run" == "1" ]] && exit 0
   [[ "$print_only" == "1" ]] && exit 0
 fi
+
+ensure_config_dir
+printf '%s|%s|%s|%s|%s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$profile" "$resolved_model" "-" "$*" >> "$SESSION_LOG"
 
 exec env "${env_args[@]}" claude "$@"
