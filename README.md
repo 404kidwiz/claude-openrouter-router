@@ -26,6 +26,13 @@ The empty `ANTHROPIC_API_KEY` is intentional. OpenRouter's Claude Code guide say
 
 ## Install
 
+Homebrew (macOS/Linux):
+
+```bash
+brew tap 404kidwiz/tap
+brew install claude-openrouter
+```
+
 One-line install:
 
 ```bash
